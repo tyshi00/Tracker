@@ -129,6 +129,7 @@ class StepsScreen(
                                         it,
                                         title = "Steps",
                                         initialValue = state.stepsValue,
+                                        isDecimal = true,
                                     )
                                 },
                                 resultCallback = { result ->

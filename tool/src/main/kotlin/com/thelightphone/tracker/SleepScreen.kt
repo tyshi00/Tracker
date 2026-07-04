@@ -138,6 +138,7 @@ class SleepScreen(
                                             it,
                                             title = "Hours",
                                             initialValue = state.hoursValue,
+                                            isDecimal = true,
                                         )
                                     },
                                     resultCallback = { result ->
@@ -161,6 +162,7 @@ class SleepScreen(
                                             it,
                                             title = "Minutes",
                                             initialValue = state.minutesValue,
+                                            isDecimal = true,
                                         )
                                     },
                                     resultCallback = { result ->
