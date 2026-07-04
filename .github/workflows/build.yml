@@ -31,11 +31,24 @@ jobs:
       - name: Grant execute permission to gradlew
         run: chmod +x gradlew
 
-      - name: Build debug APK
+     - name: Build debug APK
         run: ./gradlew :tool:assembleDebug --console=plain
+
+      - name: Rename APK
+        run: cp tool/build/outputs/apk/debug/tool-debug.apk tool/build/outputs/apk/debug/tracker.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: tool-debug-apk
-          path: tool/build/outputs/apk/debug/tool-debug.apk
+          name: tracker
+          path: tool/build/outputs/apk/debug/tracker.apk
+
+      - name: Publish GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          files: tool/build/outputs/apk/debug/tracker.apk
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
