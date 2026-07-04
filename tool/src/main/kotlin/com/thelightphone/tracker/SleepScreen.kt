@@ -32,6 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 
 data class SleepState(
@@ -45,18 +47,22 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
     private val _state = MutableStateFlow(SleepState())
     val state: StateFlow<SleepState> = _state.asStateFlow()
 
+    private val dbMutex = Mutex()
+
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         reload()
     }
 
-    private fun reload() {
-        viewModelScope.launch(Dispatchers.IO) {
+ private fun reload() {
+    viewModelScope.launch(Dispatchers.IO) {
+        dbMutex.withLock {
             _state.value = _state.value.copy(
                 weeklyAvgDisplay = formatSleep(repo.getWeeklyAvgSleepMinutes()),
                 monthlyAvgDisplay = formatSleep(repo.getMonthlyAvgSleepMinutes()),
             )
         }
     }
+}
 
     fun setHours(value: String) {
         _state.value = _state.value.copy(hoursValue = value)
@@ -77,8 +83,9 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
         }
     }
 
-    fun reset() {
-        viewModelScope.launch(Dispatchers.IO) {
+fun reset() {
+    viewModelScope.launch(Dispatchers.IO) {
+        dbMutex.withLock {
             repo.resetSleep()
             _state.value = _state.value.copy(
                 hoursValue = "",
@@ -88,6 +95,7 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
             )
         }
     }
+}
 }
 
 class SleepScreen(

@@ -31,6 +31,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 
 data class StepsState(
@@ -43,16 +45,20 @@ class StepsViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
     private val _state = MutableStateFlow(StepsState())
     val state: StateFlow<StepsState> = _state.asStateFlow()
 
+    private val dbMutex = Mutex()
+
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         reload()
     }
 
-    private fun reload() {
+      private fun reload() {
         viewModelScope.launch(Dispatchers.IO) {
-            _state.value = _state.value.copy(
-                weeklyDisplay = "%,d".format(repo.getWeeklySteps()),
-                monthlyDisplay = "%,d".format(repo.getMonthlySteps()),
-            )
+            dbMutex.withLock {
+                _state.value = _state.value.copy(
+                    weeklyDisplay = "%,d".format(repo.getWeeklySteps()),
+                    monthlyDisplay = "%,d".format(repo.getMonthlySteps()),
+                )
+            }
         }
     }
 
@@ -72,12 +78,14 @@ class StepsViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
 
     fun reset() {
         viewModelScope.launch(Dispatchers.IO) {
-            repo.resetSteps()
-            _state.value = _state.value.copy(
-                stepsValue = "",
-                weeklyDisplay = "0",
-                monthlyDisplay = "0",
-            )
+            dbMutex.withLock {
+                repo.resetSteps()
+                _state.value = _state.value.copy(
+                    stepsValue = "",
+                    weeklyDisplay = "0",
+                    monthlyDisplay = "0",
+                )
+            }
         }
     }
 }

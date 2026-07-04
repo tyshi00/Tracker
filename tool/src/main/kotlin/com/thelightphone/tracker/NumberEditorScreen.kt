@@ -15,6 +15,7 @@ import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
+import java.util.UUID
 
 class NumberEditorScreen(
     sealedActivity: SealedLightActivity,
@@ -22,6 +23,8 @@ class NumberEditorScreen(
     private val initialValue: String,
     private val isDecimal: Boolean = false,
 ) : SimpleLightScreen<String>(sealedActivity) {
+
+    private val editorInstanceKey = UUID.randomUUID().toString()
 
     @Composable
     override fun Content() {
@@ -38,6 +41,7 @@ class NumberEditorScreen(
                 onBack = { goBack(null) },
                 submitLabel = "DONE",
                 initialLayout = if (isDecimal) NumberLayout else LowerCaseLayout,
+                editorKey = editorInstanceKey,
                 modifier = Modifier.background(LightThemeTokens.colors.background),
             )
         }
