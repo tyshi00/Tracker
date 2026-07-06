@@ -16,4 +16,4 @@ This repo is built on Light's SDK scaffolding for Light Phone III tools, but at 
 
 ## Using it
 
-Install the APK on your Light Phone III and you're done — no accounts, no setup, no companion app required. It just runs.
+Install the APK on your Light Phone III. 
