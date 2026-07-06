@@ -9,6 +9,7 @@ A tiny health tracker for the Light Phone III — just a simple way to keep tabs
 - **Steps** — track your daily step count
 - **Cycle** *(optional)* — log period start/end dates, flow, mood, and energy, and see your next expected date on the home screen. Off by default — flip it on in Settings if it's useful to you
 - **Forgot to log something?** Every entry screen lets you pick a date from a calendar, so you can backdate an entry instead of losing that day
+- **History** — Water, Steps, and Sleep each have a history view showing last month's total and a yearly average; Cycle has its own history of past logged cycles
 - **Settings** — flip to a light theme if you'd rather not stare at black-on-white all day (or vice versa), set your default water unit, turn Cycle tracking on/off, or reset your data
 
 ## Using it
