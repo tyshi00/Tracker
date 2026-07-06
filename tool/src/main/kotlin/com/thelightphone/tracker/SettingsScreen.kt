@@ -1,7 +1,5 @@
 package com.thelightphone.tracker
 
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -105,7 +103,7 @@ class SettingsScreen(
                         icon = LightIcons.BACK,
                         onClick = { goBack() },
                     ),
-                    center = LightTopBarCenter.Text("Settings", sizeAdjustment = 15f),
+                    center = LightTopBarCenter.Text("Settings"),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 
@@ -128,19 +126,9 @@ class SettingsScreen(
                             variant = LightTextVariant.Copy,
                             modifier = Modifier.weight(1f),
                         )
-                        Crossfade(
-                            targetState = state.invertColors,
-                            animationSpec = tween(durationMillis = 150),
-                            label = "invertColorsToggle",
-                        ) { inverted ->
-                            // TOGGLE_ON's artwork has its knob on the left; TOGGLE_OFF's
-                            // knob is on the right. The screen is black (dark theme) when
-                            // invertColors is false, so the knob should sit on the left
-                            // in that state — i.e. show TOGGLE_ON when NOT inverted.
-                            LightIcon(
-                                icon = if (inverted) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
-                            )
-                        }
+                        LightIcon(
+                            icon = if (state.invertColors) LightIcons.TOGGLE_ON else LightIcons.TOGGLE_OFF,
+                        )
                     }
 
                     // Default water unit
@@ -167,7 +155,7 @@ class SettingsScreen(
                             )
                             LightText(
                                 text = state.defaultWaterUnit.label,
-                                variant = LightTextVariant.Detail,
+                                variant = LightTextVariant.Fine,
                                 lighten = true,
                             )
                         }

@@ -48,13 +48,12 @@ fun LightTextInputEditor(
     submitIcon: LightIconConfiguration? = null,
     showBackButton: Boolean = true,
     editorKey: Any = title,
-    initialLayout: Layout = LowerCaseLayout,
 ) {
     val keyboardCallback = remember(state) { TextInputKeyboardCallback(state) }
 
     val keyboardViewModel: Lp3KeyboardViewModel = viewModel<DefaultLp3KeyboardViewModel>(
         key = "LightTextInputEditor-$editorKey",
-        factory = factory(keyboardCallback, keyboardOptionsFlow, initialLayout),
+        factory = factory(keyboardCallback, keyboardOptionsFlow),
     )
 
     LightTextInputEditor(
@@ -177,8 +176,7 @@ fun LightTextInputEditor(
 
 private fun factory(
     callback: Lp3RepeatableKeyboardCallback,
-    keyboardOptionsFlow: StateFlow<KeyboardOptions>,
-    initialLayout: Layout = LowerCaseLayout,
+    keyboardOptionsFlow: StateFlow<KeyboardOptions>
 ): ViewModelProvider.Factory =
     object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -186,7 +184,6 @@ private fun factory(
             return DefaultLp3KeyboardViewModel(
                 callback,
                 keyboardOptionsFlow = keyboardOptionsFlow,
-                initialLayout = initialLayout,
                 optionsForLayout = {
                     val showCloseButton = when (it) {
                         EmojiLayout, is ExtendedCharKeyboard -> true

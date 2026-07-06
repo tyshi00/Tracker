@@ -22,7 +22,6 @@ import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
-import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
@@ -100,47 +99,39 @@ class HomeScreen(sealedActivity: SealedLightActivity) :
                     .fillMaxSize()
                     .background(LightThemeTokens.colors.background),
             ) {
+                // LightTopBar renders its center text at LightTextVariant.Fine (25sp) internally
                 LightTopBar(
-                    center = LightTopBarCenter.Text("Tracker", sizeAdjustment = 15f),
+                    center = LightTopBarCenter.Text("Tracker"),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 
-                LightScrollView(
+                Column(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
                         .padding(horizontal = 1f.gridUnitsAsDp()),
                 ) {
-                    // Water
                     TrackerHomeItem(
                         label = "Water",
                         value = state.waterDisplay,
                         unit = state.waterUnit,
-                        onClick = {
-                            navigateTo(screenFactory = { WaterScreen(it, repo) })
-                        },
+                        onClick = { navigateTo(screenFactory = { WaterScreen(it, repo) }) },
                     )
 
                     Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
 
-                    // Steps
                     TrackerHomeItem(
                         label = "Steps",
                         value = state.stepsDisplay,
-                        onClick = {
-                            navigateTo(screenFactory = { StepsScreen(it, repo) })
-                        },
+                        onClick = { navigateTo(screenFactory = { StepsScreen(it, repo) }) },
                     )
 
                     Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
 
-                    // Sleep
                     TrackerHomeItem(
                         label = "Sleep",
                         value = state.sleepDisplay,
-                        onClick = {
-                            navigateTo(screenFactory = { SleepScreen(it, repo) })
-                        },
+                        onClick = { navigateTo(screenFactory = { SleepScreen(it, repo) }) },
                     )
                 }
 
@@ -152,9 +143,7 @@ class HomeScreen(sealedActivity: SealedLightActivity) :
                         null,
                         LightBarButton.LightIcon(
                             icon = LightIcons.SETTINGS,
-                            onClick = {
-                                navigateTo(screenFactory = { SettingsScreen(it, repo) })
-                            },
+                            onClick = { navigateTo(screenFactory = { SettingsScreen(it, repo) }) },
                         ),
                     ),
                 )
@@ -176,20 +165,22 @@ private fun TrackerHomeItem(
             .clickable(onClick = onClick)
             .padding(vertical = 0.5f.gridUnitsAsDp()),
     ) {
+        // SDK Detail variant (20sp) — matches ic icon label usage in UiDemoIconsScreen
         LightText(
             text = label.uppercase(),
-            variant = LightTextVariant.Superfine,
+            variant = LightTextVariant.Detail,
             lighten = true,
         )
+        // SDK Heading variant (38sp) — primary display value, matches WeatherHomeScreen usage
         LightText(
             text = value,
-            variant = LightTextVariant.Title,
-            sizeAdjustment = -40f,
+            variant = LightTextVariant.Heading,
         )
         if (unit != null) {
+            // SDK Fine variant (25sp) — secondary label, matches AuthenticatorAccountScreen
             LightText(
                 text = unit,
-                variant = LightTextVariant.Detail,
+                variant = LightTextVariant.Fine,
                 lighten = true,
             )
         }

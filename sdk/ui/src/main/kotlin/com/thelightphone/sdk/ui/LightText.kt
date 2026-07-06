@@ -8,7 +8,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,7 +35,7 @@ enum class LightTextVariant {
 }
 
 @Composable
-private fun variantStyle(variant: LightTextVariant, sizeAdjustment: Float = 0f): TextStyle {
+private fun variantStyle(variant: LightTextVariant): TextStyle {
     val t = LightThemeTokens.typography
     val base = when (variant) {
         LightTextVariant.Title -> t.title
@@ -52,12 +51,7 @@ private fun variantStyle(variant: LightTextVariant, sizeAdjustment: Float = 0f):
         LightTextVariant.Superfine -> t.superfine
         LightTextVariant.Micro -> t.micro
     }
-    val adjusted = if (sizeAdjustment != 0f && base.fontSize != TextUnit.Unspecified) {
-        base.copy(fontSize = (base.fontSize.value + sizeAdjustment).sp)
-    } else {
-        base
-    }
-    return adjusted.scaledForScreenHeight()
+    return base.scaledForScreenHeight()
 }
 
 @Composable
@@ -90,7 +84,6 @@ fun LightText(
     maxLines: Int = Int.MAX_VALUE,
     overflow: TextOverflow = TextOverflow.Clip,
     color: Color? = null,
-    sizeAdjustment: Float = 0f,
 ) {
     val colors = LightThemeTokens.colors
     val baseColor = when {
@@ -99,7 +92,7 @@ fun LightText(
         else -> colors.content
     }
 
-    val style = variantStyle(variant, sizeAdjustment)
+    val style = variantStyle(variant)
         .let { if (align != null) it.copy(textAlign = align) else it }
         .let { if (underline) it.copy(textDecoration = TextDecoration.Underline) else it }
         .let { if (monospace) it.copy(fontFamily = FontFamily.Monospace) else it }

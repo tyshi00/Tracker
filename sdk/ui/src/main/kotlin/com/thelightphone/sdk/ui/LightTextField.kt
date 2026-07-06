@@ -12,6 +12,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 
+private const val UNDERLINE_THICKNESS_PX = 3f
+private const val UNDERLINE_WIDTH_FRACTION = 0.8f
+
 private const val VALUE_TO_UNDERLINE_GAP_GRID_UNITS = 0.5f
 
 /**
@@ -26,6 +29,7 @@ fun LightTextField(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val colors = LightThemeTokens.colors
     Column(modifier = modifier.fillMaxWidth()) {
         LightText(
             text = label,
@@ -47,6 +51,12 @@ fun LightTextField(
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(modifier = Modifier.height(VALUE_TO_UNDERLINE_GAP_GRID_UNITS.gridUnitsAsDp()))
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth(UNDERLINE_WIDTH_FRACTION)
+                    .height(UNDERLINE_THICKNESS_PX.designVerticalPxToDp())
+                    .background(colors.content),
+            )
         }
     }
 }

@@ -31,8 +31,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 
 data class WaterState(
@@ -47,11 +45,8 @@ class WaterViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
     private val _state = MutableStateFlow(WaterState())
     val state: StateFlow<WaterState> = _state.asStateFlow()
 
-    private val dbMutex = Mutex()
-
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
-    viewModelScope.launch(Dispatchers.IO) {
-        dbMutex.withLock {
+        viewModelScope.launch(Dispatchers.IO) {
             val unit = repo.getWaterUnit()
             val weekMl = repo.getWeeklyWaterMl()
             val monthMl = repo.getMonthlyWaterMl()
@@ -63,15 +58,13 @@ class WaterViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
             )
         }
     }
-}
 
     fun setAmount(value: String) {
         _state.value = _state.value.copy(amountValue = value)
     }
 
-   fun setUnit(unit: WaterUnit) {
-    viewModelScope.launch(Dispatchers.IO) {
-        dbMutex.withLock {
+    fun setUnit(unit: WaterUnit) {
+        viewModelScope.launch(Dispatchers.IO) {
             val weekMl = repo.getWeeklyWaterMl()
             val monthMl = repo.getMonthlyWaterMl()
             _state.value = _state.value.copy(
@@ -81,13 +74,11 @@ class WaterViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
             )
         }
     }
-}
 
     fun save() {
-    val amount = _state.value.amountValue.toDoubleOrNull() ?: return
-    if (amount <= 0) return
-    viewModelScope.launch(Dispatchers.IO) {
-        dbMutex.withLock {
+        val amount = _state.value.amountValue.toDoubleOrNull() ?: return
+        if (amount <= 0) return
+        viewModelScope.launch(Dispatchers.IO) {
             repo.addWater(amount, _state.value.selectedUnit)
             val unit = _state.value.selectedUnit
             val weekMl = repo.getWeeklyWaterMl()
@@ -99,11 +90,9 @@ class WaterViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
             )
         }
     }
-}
 
     fun reset() {
-    viewModelScope.launch(Dispatchers.IO) {
-        dbMutex.withLock {
+        viewModelScope.launch(Dispatchers.IO) {
             repo.resetWater()
             val unit = _state.value.selectedUnit
             _state.value = _state.value.copy(
@@ -113,7 +102,6 @@ class WaterViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
             )
         }
     }
-}
 }
 
 class WaterScreen(
@@ -142,7 +130,7 @@ class WaterScreen(
                         icon = LightIcons.BACK,
                         onClick = { goBack() },
                     ),
-                    center = LightTopBarCenter.Text("Water", sizeAdjustment = 15f),
+                    center = LightTopBarCenter.Text("Water"),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 

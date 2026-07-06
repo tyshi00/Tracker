@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,8 +33,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 
 data class SleepState(
@@ -47,22 +46,18 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
     private val _state = MutableStateFlow(SleepState())
     val state: StateFlow<SleepState> = _state.asStateFlow()
 
-    private val dbMutex = Mutex()
-
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         reload()
     }
 
- private fun reload() {
-    viewModelScope.launch(Dispatchers.IO) {
-        dbMutex.withLock {
+    private fun reload() {
+        viewModelScope.launch(Dispatchers.IO) {
             _state.value = _state.value.copy(
                 weeklyAvgDisplay = formatSleep(repo.getWeeklyAvgSleepMinutes()),
                 monthlyAvgDisplay = formatSleep(repo.getMonthlyAvgSleepMinutes()),
             )
         }
     }
-}
 
     fun setHours(value: String) {
         _state.value = _state.value.copy(hoursValue = value)
@@ -83,9 +78,8 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
         }
     }
 
-fun reset() {
-    viewModelScope.launch(Dispatchers.IO) {
-        dbMutex.withLock {
+    fun reset() {
+        viewModelScope.launch(Dispatchers.IO) {
             repo.resetSleep()
             _state.value = _state.value.copy(
                 hoursValue = "",
@@ -95,7 +89,6 @@ fun reset() {
             )
         }
     }
-}
 }
 
 class SleepScreen(
@@ -124,7 +117,7 @@ class SleepScreen(
                         icon = LightIcons.BACK,
                         onClick = { goBack() },
                     ),
-                    center = LightTopBarCenter.Text("Sleep", sizeAdjustment = 15f),
+                    center = LightTopBarCenter.Text("Sleep"),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 
@@ -146,7 +139,6 @@ class SleepScreen(
                                             it,
                                             title = "Hours",
                                             initialValue = state.hoursValue,
-                                            isDecimal = true,
                                         )
                                     },
                                     resultCallback = { result ->
@@ -170,7 +162,6 @@ class SleepScreen(
                                             it,
                                             title = "Minutes",
                                             initialValue = state.minutesValue,
-                                            isDecimal = true,
                                         )
                                     },
                                     resultCallback = { result ->

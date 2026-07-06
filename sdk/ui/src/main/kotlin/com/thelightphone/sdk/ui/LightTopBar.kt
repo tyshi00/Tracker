@@ -28,7 +28,6 @@ sealed interface LightTopBarCenter {
     data class Text(
         val text: String,
         override val onClick: (() -> Unit)? = null,
-        val sizeAdjustment: Float = 0f,
     ) : LightTopBarCenter
 
     data class TwoLineDetail(
@@ -116,7 +115,6 @@ private fun LightTopBarCenterView(center: LightTopBarCenter?) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = modifier,
-                sizeAdjustment = center.sizeAdjustment,
             )
         }
 
