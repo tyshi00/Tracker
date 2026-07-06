@@ -96,8 +96,8 @@ class LightActivity internal constructor() : ComponentActivity() {
         setContent {
             androidx.compose.runtime.LaunchedEffect(Unit) { contentReady = true }
             val entry = currentScreen.value
-            val screen = entry?.screen
-            if (screen != null && entry != null) {
+            if (entry != null) {
+                val screen = entry.screen
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier

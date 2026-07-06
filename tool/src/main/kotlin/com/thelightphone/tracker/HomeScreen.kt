@@ -22,6 +22,7 @@ import com.thelightphone.sdk.buildDatabase
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
+import com.thelightphone.sdk.ui.LightScrollView
 import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
@@ -115,7 +116,7 @@ class HomeScreen(sealedActivity: SealedLightActivity) :
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 
-                Column(
+                LightScrollView(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
