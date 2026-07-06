@@ -31,6 +31,8 @@ object ManifestGenerator {
         appendLine("""    <application""")
         appendLine("""        android:name="com.thelightphone.sdk.LightSdkApplication"""")
         appendLine("""        android:label="${xmlAttr(metadata.label)}"""")
+        appendLine("""        android:icon="@mipmap/ic_launcher"""")
+        appendLine("""        android:roundIcon="@mipmap/ic_launcher"""")
         appendLine("""        android:supportsRtl="true"""")
         appendLine("""        android:theme="@style/LightSdk.Theme.Splash">""")
         appendLine("""        <meta-data""")

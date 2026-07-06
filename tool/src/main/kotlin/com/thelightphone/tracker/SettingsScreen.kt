@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 data class SettingsState(
     val invertColors: Boolean = false,
     val defaultWaterUnit: WaterUnit = WaterUnit.ML,
+    val cycleTrackingEnabled: Boolean = false,
 )
 
 class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
@@ -50,6 +51,7 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
             _state.value = SettingsState(
                 invertColors = repo.getInvertColors(),
                 defaultWaterUnit = repo.getWaterUnit(),
+                cycleTrackingEnabled = repo.getCycleFeatureEnabled(),
             )
         }
     }
@@ -60,6 +62,14 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
             repo.setInvertColors(newValue)
             _state.value = _state.value.copy(invertColors = newValue)
             if (newValue) LightThemeController.setLightTheme() else LightThemeController.setDarkTheme()
+        }
+    }
+
+    fun toggleCycleTracking() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newValue = !_state.value.cycleTrackingEnabled
+            repo.setCycleFeatureEnabled(newValue)
+            _state.value = _state.value.copy(cycleTrackingEnabled = newValue)
         }
     }
 
@@ -126,8 +136,32 @@ class SettingsScreen(
                             variant = LightTextVariant.Copy,
                             modifier = Modifier.weight(1f),
                         )
+                        // TOGGLE_ON's artwork has its knob on the left; TOGGLE_OFF's
+                        // knob is on the right. The screen is black (dark theme) when
+                        // invertColors is false, so the knob should sit on the left
+                        // in that state — i.e. show TOGGLE_ON when NOT inverted.
                         LightIcon(
-                            icon = if (state.invertColors) LightIcons.TOGGLE_ON else LightIcons.TOGGLE_OFF,
+                            icon = if (state.invertColors) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
+                        )
+                    }
+
+                    // Track menstrual cycle — opt-in, hidden by default since not
+                    // everyone tracks a cycle. Controls whether the Cycle tile
+                    // shows up on the Home screen.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.toggleCycleTracking() }
+                            .padding(vertical = 0.75f.gridUnitsAsDp()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        LightText(
+                            text = "Track menstrual cycle",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier.weight(1f),
+                        )
+                        LightIcon(
+                            icon = if (state.cycleTrackingEnabled) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
                         )
                     }
 

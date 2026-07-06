@@ -33,10 +33,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class SleepState(
     val hoursValue: String = "",
     val minutesValue: String = "",
+    val selectedDate: String = todayStr(),
     val weeklyAvgDisplay: String = "0h 0m",
     val monthlyAvgDisplay: String = "0h 0m",
 )
@@ -45,16 +48,23 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
     private val _state = MutableStateFlow(SleepState())
     val state: StateFlow<SleepState> = _state.asStateFlow()
 
+    // Guards reload/save/reset so a screen-refresh read (triggered when the
+    // screen becomes visible again) can't race a concurrent reset/save and
+    // overwrite it with stale data.
+    private val dbMutex = Mutex()
+
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         reload()
     }
 
     private fun reload() {
         viewModelScope.launch(Dispatchers.IO) {
-            _state.value = _state.value.copy(
-                weeklyAvgDisplay = formatSleep(repo.getWeeklyAvgSleepMinutes()),
-                monthlyAvgDisplay = formatSleep(repo.getMonthlyAvgSleepMinutes()),
-            )
+            dbMutex.withLock {
+                _state.value = _state.value.copy(
+                    weeklyAvgDisplay = formatSleep(repo.getWeeklyAvgSleepMinutes()),
+                    monthlyAvgDisplay = formatSleep(repo.getMonthlyAvgSleepMinutes()),
+                )
+            }
         }
     }
 
@@ -66,26 +76,39 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
         _state.value = _state.value.copy(minutesValue = value)
     }
 
+    fun setDate(date: String) {
+        _state.value = _state.value.copy(selectedDate = date)
+    }
+
     fun save() {
         val h = _state.value.hoursValue.toIntOrNull() ?: 0
         val m = _state.value.minutesValue.toIntOrNull() ?: 0
         if (h == 0 && m == 0) return
         viewModelScope.launch(Dispatchers.IO) {
-            repo.addSleep(h, m)
-            _state.value = _state.value.copy(hoursValue = "", minutesValue = "")
-            reload()
+            dbMutex.withLock {
+                repo.addSleep(h, m, _state.value.selectedDate)
+                _state.value = _state.value.copy(
+                    hoursValue = "",
+                    minutesValue = "",
+                    selectedDate = todayStr(),
+                    weeklyAvgDisplay = formatSleep(repo.getWeeklyAvgSleepMinutes()),
+                    monthlyAvgDisplay = formatSleep(repo.getMonthlyAvgSleepMinutes()),
+                )
+            }
         }
     }
 
     fun reset() {
         viewModelScope.launch(Dispatchers.IO) {
-            repo.resetSleep()
-            _state.value = _state.value.copy(
-                hoursValue = "",
-                minutesValue = "",
-                weeklyAvgDisplay = "0h 0m",
-                monthlyAvgDisplay = "0h 0m",
-            )
+            dbMutex.withLock {
+                repo.resetSleep()
+                _state.value = _state.value.copy(
+                    hoursValue = "",
+                    minutesValue = "",
+                    weeklyAvgDisplay = "0h 0m",
+                    monthlyAvgDisplay = "0h 0m",
+                )
+            }
         }
     }
 }
@@ -126,6 +149,24 @@ class SleepScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 1f.gridUnitsAsDp()),
                 ) {
+                    // Date field — defaults to today, lets you log a forgotten day
+                    LightTextField(
+                        label = "Date",
+                        value = dateLabel(state.selectedDate),
+                        placeholder = "",
+                        onClick = {
+                            navigateTo(
+                                screenFactory = { DatePickerScreen(it, state.selectedDate) },
+                                resultCallback = { result ->
+                                    if (result != null) viewModel.setDate(result)
+                                },
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Spacer(modifier = Modifier.height(1.5f.gridUnitsAsDp()))
+
                     Row(modifier = Modifier.fillMaxWidth()) {
                         LightTextField(
                             label = "Hours",
@@ -181,12 +222,18 @@ class SleepScreen(
 
                 LightBottomBar(
                     items = listOf(
-                        LightBarButton.Text(
-                            text = "SAVE",
+                        LightBarButton.LightIcon(
+                            icon = LightIcons.SAVE_TO_ALBUM,
                             onClick = { viewModel.save() },
+                            contentDescription = "Save",
+                        ),
+                        LightBarButton.LightIcon(
+                            icon = LightIcons.LIST,
+                            onClick = { navigateTo(screenFactory = { SleepHistoryScreen(it, repo) }) },
+                            contentDescription = "History",
                         ),
                         LightBarButton.Text(
-                            text = "RESET SLEEP",
+                            text = "RESET",
                             onClick = {
                                 navigateTo(
                                     screenFactory = {

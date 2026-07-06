@@ -32,11 +32,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class WaterState(
     val amountValue: String = "",
     val selectedUnit: WaterUnit = WaterUnit.ML,
     val defaultUnit: WaterUnit = WaterUnit.ML,
+    val selectedDate: String = todayStr(),
     val weeklyDisplay: String = "0 ml",
     val monthlyDisplay: String = "0 ml",
 )
@@ -45,17 +48,24 @@ class WaterViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
     private val _state = MutableStateFlow(WaterState())
     val state: StateFlow<WaterState> = _state.asStateFlow()
 
+    // Guards reload/save/reset so a screen-refresh read (triggered when the
+    // screen becomes visible again) can't race a concurrent reset/save and
+    // overwrite it with stale data.
+    private val dbMutex = Mutex()
+
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         viewModelScope.launch(Dispatchers.IO) {
-            val unit = repo.getWaterUnit()
-            val weekMl = repo.getWeeklyWaterMl()
-            val monthMl = repo.getMonthlyWaterMl()
-            _state.value = _state.value.copy(
-                selectedUnit = unit,
-                defaultUnit = unit,
-                weeklyDisplay = "${WaterConversion.format(weekMl, unit)} ${unit.label}",
-                monthlyDisplay = "${WaterConversion.format(monthMl, unit)} ${unit.label}",
-            )
+            dbMutex.withLock {
+                val unit = repo.getWaterUnit()
+                val weekMl = repo.getWeeklyWaterMl()
+                val monthMl = repo.getMonthlyWaterMl()
+                _state.value = _state.value.copy(
+                    selectedUnit = unit,
+                    defaultUnit = unit,
+                    weeklyDisplay = "${WaterConversion.format(weekMl, unit)} ${unit.label}",
+                    monthlyDisplay = "${WaterConversion.format(monthMl, unit)} ${unit.label}",
+                )
+            }
         }
     }
 
@@ -65,41 +75,52 @@ class WaterViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
 
     fun setUnit(unit: WaterUnit) {
         viewModelScope.launch(Dispatchers.IO) {
-            val weekMl = repo.getWeeklyWaterMl()
-            val monthMl = repo.getMonthlyWaterMl()
-            _state.value = _state.value.copy(
-                selectedUnit = unit,
-                weeklyDisplay = "${WaterConversion.format(weekMl, unit)} ${unit.label}",
-                monthlyDisplay = "${WaterConversion.format(monthMl, unit)} ${unit.label}",
-            )
+            dbMutex.withLock {
+                val weekMl = repo.getWeeklyWaterMl()
+                val monthMl = repo.getMonthlyWaterMl()
+                _state.value = _state.value.copy(
+                    selectedUnit = unit,
+                    weeklyDisplay = "${WaterConversion.format(weekMl, unit)} ${unit.label}",
+                    monthlyDisplay = "${WaterConversion.format(monthMl, unit)} ${unit.label}",
+                )
+            }
         }
+    }
+
+    fun setDate(date: String) {
+        _state.value = _state.value.copy(selectedDate = date)
     }
 
     fun save() {
         val amount = _state.value.amountValue.toDoubleOrNull() ?: return
         if (amount <= 0) return
         viewModelScope.launch(Dispatchers.IO) {
-            repo.addWater(amount, _state.value.selectedUnit)
-            val unit = _state.value.selectedUnit
-            val weekMl = repo.getWeeklyWaterMl()
-            val monthMl = repo.getMonthlyWaterMl()
-            _state.value = _state.value.copy(
-                amountValue = "",
-                weeklyDisplay = "${WaterConversion.format(weekMl, unit)} ${unit.label}",
-                monthlyDisplay = "${WaterConversion.format(monthMl, unit)} ${unit.label}",
-            )
+            dbMutex.withLock {
+                repo.addWater(amount, _state.value.selectedUnit, _state.value.selectedDate)
+                val unit = _state.value.selectedUnit
+                val weekMl = repo.getWeeklyWaterMl()
+                val monthMl = repo.getMonthlyWaterMl()
+                _state.value = _state.value.copy(
+                    amountValue = "",
+                    selectedDate = todayStr(),
+                    weeklyDisplay = "${WaterConversion.format(weekMl, unit)} ${unit.label}",
+                    monthlyDisplay = "${WaterConversion.format(monthMl, unit)} ${unit.label}",
+                )
+            }
         }
     }
 
     fun reset() {
         viewModelScope.launch(Dispatchers.IO) {
-            repo.resetWater()
-            val unit = _state.value.selectedUnit
-            _state.value = _state.value.copy(
-                amountValue = "",
-                weeklyDisplay = "0 ${unit.label}",
-                monthlyDisplay = "0 ${unit.label}",
-            )
+            dbMutex.withLock {
+                repo.resetWater()
+                val unit = _state.value.selectedUnit
+                _state.value = _state.value.copy(
+                    amountValue = "",
+                    weeklyDisplay = "0 ${unit.label}",
+                    monthlyDisplay = "0 ${unit.label}",
+                )
+            }
         }
     }
 }
@@ -140,6 +161,24 @@ class WaterScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 1f.gridUnitsAsDp()),
                 ) {
+                    // Date field — defaults to today, lets you log a forgotten day
+                    LightTextField(
+                        label = "Date",
+                        value = dateLabel(state.selectedDate),
+                        placeholder = "",
+                        onClick = {
+                            navigateTo(
+                                screenFactory = { DatePickerScreen(it, state.selectedDate) },
+                                resultCallback = { result ->
+                                    if (result != null) viewModel.setDate(result)
+                                },
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Spacer(modifier = Modifier.height(1.5f.gridUnitsAsDp()))
+
                     // Amount field
                     LightTextField(
                         label = "Amount",
@@ -190,12 +229,18 @@ class WaterScreen(
 
                 LightBottomBar(
                     items = listOf(
-                        LightBarButton.Text(
-                            text = "SAVE",
+                        LightBarButton.LightIcon(
+                            icon = LightIcons.SAVE_TO_ALBUM,
                             onClick = { viewModel.save() },
+                            contentDescription = "Save",
+                        ),
+                        LightBarButton.LightIcon(
+                            icon = LightIcons.LIST,
+                            onClick = { navigateTo(screenFactory = { WaterHistoryScreen(it, repo) }) },
+                            contentDescription = "History",
                         ),
                         LightBarButton.Text(
-                            text = "RESET WATER",
+                            text = "RESET",
                             onClick = {
                                 navigateTo(
                                     screenFactory = {

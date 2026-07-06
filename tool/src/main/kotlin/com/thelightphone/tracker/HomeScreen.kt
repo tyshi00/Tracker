@@ -41,6 +41,8 @@ data class HomeState(
     val waterUnit: String = "ml",
     val stepsDisplay: String = "0",
     val sleepDisplay: String = "0h 0m",
+    val cycleEnabled: Boolean = false,
+    val cycleNextDisplay: String = "",
 )
 
 class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
@@ -61,13 +63,21 @@ class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
 
             val waterMl = repo.getTodayWaterMl()
             val steps = repo.getTodaySteps()
-            val sleepMin = repo.getTodaySleepMinutes()
+            val sleepMin = repo.getPreviousDaySleepMinutes()
+            val cycleEnabled = repo.getCycleFeatureEnabled()
+            val cycleNextDisplay = if (cycleEnabled) {
+                repo.predictNextCycleStart()?.let { dateLabel(it) } ?: "Not enough data yet"
+            } else {
+                ""
+            }
 
             _state.value = HomeState(
                 waterDisplay = WaterConversion.format(waterMl, unit),
                 waterUnit = unit.label,
                 stepsDisplay = "%,d".format(steps),
                 sleepDisplay = formatSleep(sleepMin),
+                cycleEnabled = cycleEnabled,
+                cycleNextDisplay = cycleNextDisplay,
             )
         }
     }
@@ -133,6 +143,16 @@ class HomeScreen(sealedActivity: SealedLightActivity) :
                         value = state.sleepDisplay,
                         onClick = { navigateTo(screenFactory = { SleepScreen(it, repo) }) },
                     )
+
+                    if (state.cycleEnabled) {
+                        Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
+
+                        TrackerHomeItem(
+                            label = "Cycle",
+                            value = state.cycleNextDisplay,
+                            onClick = { navigateTo(screenFactory = { CycleScreen(it, repo) }) },
+                        )
+                    }
                 }
 
                 LightBottomBar(

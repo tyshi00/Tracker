@@ -13,6 +13,7 @@ import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
+import java.util.UUID
 
 class NumberEditorScreen(
     sealedActivity: SealedLightActivity,
@@ -20,6 +21,13 @@ class NumberEditorScreen(
     private val initialValue: String,
     @Suppress("UNUSED_PARAMETER") isDecimal: Boolean = false,
 ) : SimpleLightScreen<String>(sealedActivity) {
+
+    // Each screen instance needs its own keyboard ViewModel. The Activity's
+    // ViewModelStore is shared across screen instances (NumberEditorScreen is
+    // not a ViewModelStoreOwner), so keying off `title` alone would reuse a
+    // stale keyboard instance still wired to a previous, discarded text state
+    // — inputs would appear to only work the first time.
+    private val editorInstanceKey = UUID.randomUUID().toString()
 
     @Composable
     override fun Content() {
@@ -35,6 +43,7 @@ class NumberEditorScreen(
                 onSubmit = { result -> goBack(result.toString().trim()) },
                 onBack = { goBack(null) },
                 submitLabel = "DONE",
+                editorKey = editorInstanceKey,
                 modifier = Modifier.background(LightThemeTokens.colors.background),
             )
         }

@@ -61,9 +61,16 @@ class LightActivity internal constructor() : ComponentActivity() {
             return
         }
         val previous = backStack.last()
+        // Deliver the result (which updates the returning screen's ViewModel
+        // state) BEFORE switching the visible screen. Otherwise the screen
+        // switch triggers an immediate recomposition using the OLD state —
+        // the result callback's update flows through a StateFlow with its
+        // own async collection step, so it can arrive a beat too late for
+        // that redraw, making a just-entered value appear to vanish until
+        // the field is tapped and re-entered a second time.
+        current.deliverResult()
         previous.screen.notifyWillShow()
         currentScreen.value = previous
-        current.deliverResult()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -88,22 +95,30 @@ class LightActivity internal constructor() : ComponentActivity() {
 
         setContent {
             androidx.compose.runtime.LaunchedEffect(Unit) { contentReady = true }
-            val screen = currentScreen.value?.screen
-            if (screen != null) {
+            val entry = currentScreen.value
+            val screen = entry?.screen
+            if (screen != null && entry != null) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
                     ) {
-                        val content: @Composable () -> Unit = { screen.Content() }
-                        if (screen is ViewModelStoreOwner) {
-                            CompositionLocalProvider(
-                                LocalViewModelStoreOwner provides screen,
-                                content = content,
-                            )
-                        } else {
-                            content()
+                        // Keying by the BackStackEntry's identity forces Compose to
+                        // treat each screen instance as a distinct composition, so
+                        // remembered state (e.g. a text field's keyboard connection)
+                        // from a screen we passed through can't leak into the next
+                        // screen shown at this same call site.
+                        androidx.compose.runtime.key(entry) {
+                            val content: @Composable () -> Unit = { screen.Content() }
+                            if (screen is ViewModelStoreOwner) {
+                                CompositionLocalProvider(
+                                    LocalViewModelStoreOwner provides screen,
+                                    content = content,
+                                )
+                            } else {
+                                content()
+                            }
                         }
                     }
                 }
