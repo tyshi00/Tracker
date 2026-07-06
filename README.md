@@ -16,4 +16,24 @@ This repo is built on Light's SDK scaffolding for Light Phone III tools, but at 
 
 ## Using it
 
-Install the APK on your Light Phone III and you're done — no accounts, no setup, no companion app required. It just runs.
+Install the APK on your Light Phone III.
+
+## Screenshots
+
+<table>
+<tr>
+<td><img src="tool/screenshots/home_screen.png" width="200" alt="Home screen"><br><sub>Home</sub></td>
+<td><img src="tool/screenshots/home_screen_2.png" width="200" alt="Home screen with Cycle tile"><br><sub>Home (Cycle enabled)</sub></td>
+<td><img src="tool/screenshots/water_screen.png" width="200" alt="Water screen"><br><sub>Water</sub></td>
+</tr>
+<tr>
+<td><img src="tool/screenshots/water_history.png" width="200" alt="Water history screen"><br><sub>Water history</sub></td>
+<td><img src="tool/screenshots/steps_screen.png" width="200" alt="Steps screen"><br><sub>Steps</sub></td>
+<td><img src="tool/screenshots/sleep_screen.png" width="200" alt="Sleep screen"><br><sub>Sleep</sub></td>
+</tr>
+<tr>
+<td><img src="tool/screenshots/cycle_screen.png" width="200" alt="Cycle screen"><br><sub>Cycle</sub></td>
+<td><img src="tool/screenshots/cycle_screen_2.png" width="200" alt="Cycle screen scrolled down"><br><sub>Cycle (scrolled)</sub></td>
+<td><img src="tool/screenshots/settings_screen.png" width="200" alt="Settings screen"><br><sub>Settings</sub></td>
+</tr>
+</table>
