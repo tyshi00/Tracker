@@ -27,11 +27,16 @@ import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
 /**
- * Result: true = confirmed reset, false/null = cancelled
+ * Result: true = confirmed, false/null = cancelled.
+ * Shared by both whole-dataset "Reset" confirmations and per-entry "Delete"
+ * confirmations — [title] and [confirmLabel] default to the reset wording
+ * so existing call sites are unaffected.
  */
 class ConfirmResetScreen(
     sealedActivity: SealedLightActivity,
     private val message: String,
+    private val title: String = "Confirm reset",
+    private val confirmLabel: String = "RESET",
 ) : SimpleLightScreen<Boolean>(sealedActivity) {
 
     @Composable
@@ -49,7 +54,7 @@ class ConfirmResetScreen(
                         icon = LightIcons.BACK,
                         onClick = { goBack(false) },
                     ),
-                    center = LightTopBarCenter.Text("Confirm reset"),
+                    center = LightTopBarCenter.Text(title),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 
@@ -74,7 +79,7 @@ class ConfirmResetScreen(
                             onClick = { goBack(false) },
                         ),
                         LightBarButton.Text(
-                            text = "RESET",
+                            text = confirmLabel,
                             onClick = { goBack(true) },
                         ),
                     ),

@@ -20,15 +20,93 @@ enum class FlowLevel(val label: String) {
     HEAVY("Heavy"),
 }
 
-enum class Mood(val label: String) {
-    NORMAL("Normal"),
-    ANGRY("Angry"),
-    SAD("Sad"),
-    HAPPY("Happy"),
-    DEPRESSED("Depressed"),
-    DAZED("Dazed"),
-    EXCITED("Excited"),
-    ANXIOUS("Anxious"),
+enum class MoodCategory(val label: String) {
+    HIGH_ENERGY_POSITIVE("High-Energy Positive"),
+    LOW_ENERGY_POSITIVE("Low-Energy Positive"),
+    ANGER_LEANING("Anger-Leaning"),
+    SADNESS_LEANING("Sadness-Leaning"),
+    FEAR_LEANING("Fear-Leaning"),
+}
+
+enum class Mood(val label: String, val category: MoodCategory) {
+    // High-Energy Positive
+    EXCITEMENT("Excitement", MoodCategory.HIGH_ENERGY_POSITIVE),
+    JOY("Joy", MoodCategory.HIGH_ENERGY_POSITIVE),
+    CONFIDENT("Confident", MoodCategory.HIGH_ENERGY_POSITIVE),
+    CURIOUS("Curious", MoodCategory.HIGH_ENERGY_POSITIVE),
+    DETERMINED("Determined", MoodCategory.HIGH_ENERGY_POSITIVE),
+    INSPIRED("Inspired", MoodCategory.HIGH_ENERGY_POSITIVE),
+    PROUD("Proud", MoodCategory.HIGH_ENERGY_POSITIVE),
+    EAGER("Eager", MoodCategory.HIGH_ENERGY_POSITIVE),
+    AMUSED("Amused", MoodCategory.HIGH_ENERGY_POSITIVE),
+    FOCUSED("Focused", MoodCategory.HIGH_ENERGY_POSITIVE),
+    SURPRISED("Surprised", MoodCategory.HIGH_ENERGY_POSITIVE),
+    ROMANTIC("Romantic", MoodCategory.HIGH_ENERGY_POSITIVE),
+
+    // Low-Energy Positive
+    GRATEFUL("Grateful", MoodCategory.LOW_ENERGY_POSITIVE),
+    CALM("Calm", MoodCategory.LOW_ENERGY_POSITIVE),
+    CONTENT("Content", MoodCategory.LOW_ENERGY_POSITIVE),
+    PEACE("Peace", MoodCategory.LOW_ENERGY_POSITIVE),
+    HAPPINESS("Happiness", MoodCategory.LOW_ENERGY_POSITIVE),
+    LOVE("Love", MoodCategory.LOW_ENERGY_POSITIVE),
+    RELIEF("Relief", MoodCategory.LOW_ENERGY_POSITIVE),
+    HOPEFUL("Hopeful", MoodCategory.LOW_ENERGY_POSITIVE),
+    COMFORTABLE("Comfortable", MoodCategory.LOW_ENERGY_POSITIVE),
+    OPTIMISTIC("Optimistic", MoodCategory.LOW_ENERGY_POSITIVE),
+    CHEERFUL("Cheerful", MoodCategory.LOW_ENERGY_POSITIVE),
+    WARM("Warm", MoodCategory.LOW_ENERGY_POSITIVE),
+
+    // Anger-Leaning
+    ANGER("Anger", MoodCategory.ANGER_LEANING),
+    FRUSTRATED("Frustrated", MoodCategory.ANGER_LEANING),
+    ANNOYED("Annoyed", MoodCategory.ANGER_LEANING),
+    IRRITATED("Irritated", MoodCategory.ANGER_LEANING),
+    JEALOUS("Jealous", MoodCategory.ANGER_LEANING),
+    RESENTFUL("Resentful", MoodCategory.ANGER_LEANING),
+    BITTER("Bitter", MoodCategory.ANGER_LEANING),
+    DISGUST("Disgust", MoodCategory.ANGER_LEANING),
+    IMPATIENT("Impatient", MoodCategory.ANGER_LEANING),
+    OFFENDED("Offended", MoodCategory.ANGER_LEANING),
+    COLD("Cold", MoodCategory.ANGER_LEANING),
+    DEFENSIVE("Defensive", MoodCategory.ANGER_LEANING),
+
+    // Sadness-Leaning
+    SADNESS("Sadness", MoodCategory.SADNESS_LEANING),
+    TIRED("Tired", MoodCategory.SADNESS_LEANING),
+    LONELY("Lonely", MoodCategory.SADNESS_LEANING),
+    DEPRESSED("Depressed", MoodCategory.SADNESS_LEANING),
+    DISAPPOINTED("Disappointed", MoodCategory.SADNESS_LEANING),
+    BURNT_OUT("Burnt Out", MoodCategory.SADNESS_LEANING),
+    HOPELESS("Hopeless", MoodCategory.SADNESS_LEANING),
+    INSECURE("Insecure", MoodCategory.SADNESS_LEANING),
+    GUILT("Guilt", MoodCategory.SADNESS_LEANING),
+    EMBARRASSED("Embarrassed", MoodCategory.SADNESS_LEANING),
+    VULNERABLE("Vulnerable", MoodCategory.SADNESS_LEANING),
+    MISERABLE("Miserable", MoodCategory.SADNESS_LEANING),
+
+    // Fear-Leaning
+    ANXIOUS("Anxious", MoodCategory.FEAR_LEANING),
+    WORRIED("Worried", MoodCategory.FEAR_LEANING),
+    OVERWHELMED("Overwhelmed", MoodCategory.FEAR_LEANING),
+    STRESSED("Stressed", MoodCategory.FEAR_LEANING),
+    NERVOUS("Nervous", MoodCategory.FEAR_LEANING),
+    FEARFUL("Fearful", MoodCategory.FEAR_LEANING),
+    UNCOMFORTABLE("Uncomfortable", MoodCategory.FEAR_LEANING),
+    TENSE("Tense", MoodCategory.FEAR_LEANING),
+    CONFUSED("Confused", MoodCategory.FEAR_LEANING),
+    PANICKED("Panicked", MoodCategory.FEAR_LEANING),
+    SUSPICIOUS("Suspicious", MoodCategory.FEAR_LEANING),
+    SHY("Shy", MoodCategory.FEAR_LEANING),
+}
+
+/** Serializes up to 5 moods as a comma-joined list of enum names for storage. */
+fun encodeMoods(moods: List<Mood>): String = moods.joinToString(",") { it.name }
+
+/** Parses a comma-joined mood list back from storage, ignoring unknown/blank entries. */
+fun decodeMoods(raw: String?): List<Mood> {
+    if (raw.isNullOrBlank()) return emptyList()
+    return raw.split(",").mapNotNull { name -> Mood.entries.firstOrNull { it.name == name.trim() } }
 }
 
 enum class EnergyLevel(val label: String) {
@@ -38,6 +116,46 @@ enum class EnergyLevel(val label: String) {
     MID_LOW("Mid-low"),
     LOW("Low"),
     NO_ENERGY("No energy"),
+}
+
+enum class WeightUnit(val label: String) {
+    LBS("lbs"),
+    KG("kg"),
+}
+
+object WeightConversion {
+    private const val KG_PER_LB = 0.45359237
+
+    fun toKg(value: Double, unit: WeightUnit): Double = when (unit) {
+        WeightUnit.LBS -> value * KG_PER_LB
+        WeightUnit.KG -> value
+    }
+
+    fun fromKg(kg: Double, unit: WeightUnit): Double = when (unit) {
+        WeightUnit.LBS -> kg / KG_PER_LB
+        WeightUnit.KG -> kg
+    }
+
+    fun format(kg: Double, unit: WeightUnit): String {
+        val v = fromKg(kg, unit)
+        return "%.1f".format(v).trimEnd('0').trimEnd('.')
+    }
+
+    /**
+     * Formats a signed weekly rate of change with an explicit "+" for gains
+     * so the number reads as neutral fact, not implicitly framed toward loss.
+     */
+    fun formatWeeklyChange(deltaKg: Double, unit: WeightUnit): String {
+        val converted = fromKg(deltaKg, unit)
+        val sign = when {
+            converted > 0.05 -> "+"
+            converted < -0.05 -> "-"
+            else -> ""
+        }
+        val magnitude = kotlin.math.abs(converted)
+        val formatted = "%.1f".format(magnitude).trimEnd('0').trimEnd('.')
+        return "$sign$formatted ${unit.label}/week"
+    }
 }
 
 object WaterConversion {
@@ -142,6 +260,9 @@ class TrackerRepository(private val db: TrackerDatabase) {
         const val PREF_WATER_UNIT = "water_unit"
         const val PREF_INVERT = "invert_colors"
         const val PREF_CYCLE_ENABLED = "cycle_feature_enabled"
+        const val PREF_WEIGHT_UNIT = "weight_unit"
+        const val PREF_WEIGHT_ENABLED = "weight_feature_enabled"
+        const val PREF_MOOD_ENABLED = "mood_feature_enabled"
         private const val DB_NAME = "tracker.db"
 
         @Volatile private var INSTANCE: TrackerRepository? = null
@@ -296,6 +417,8 @@ class TrackerRepository(private val db: TrackerDatabase) {
     /** Full cycle history, most recent first — used by the History screen. */
     suspend fun getCycleHistory(limit: Int = 100): List<CycleEntry> = db.cycleDao().getRecent(limit)
 
+    suspend fun deleteCycleEntry(id: Long) = db.cycleDao().deleteById(id)
+
     /**
      * Inserts a new cycle if [id] is null, otherwise updates the existing
      * entry with that id (used to keep editing an in-progress cycle rather
@@ -306,7 +429,7 @@ class TrackerRepository(private val db: TrackerDatabase) {
         startDate: String,
         endDate: String?,
         flow: FlowLevel?,
-        mood: Mood?,
+        moods: List<Mood>,
         energy: EnergyLevel?,
     ) {
         val entry = CycleEntry(
@@ -314,7 +437,7 @@ class TrackerRepository(private val db: TrackerDatabase) {
             startDate = startDate,
             endDate = endDate,
             flow = flow?.name,
-            mood = mood?.name,
+            moods = if (moods.isEmpty()) null else encodeMoods(moods),
             energy = energy?.name,
         )
         if (id != null) {
@@ -343,6 +466,123 @@ class TrackerRepository(private val db: TrackerDatabase) {
         return starts.first().plusDays(avgGap.toLong()).format(DateTimeFormatter.ISO_LOCAL_DATE)
     }
 
+    // ── Weight ────────────────────────────────────────────────────────────────
+
+    suspend fun getWeightUnit(): WeightUnit {
+        val raw = db.preferenceDao().get(PREF_WEIGHT_UNIT)?.value ?: return WeightUnit.LBS
+        return WeightUnit.entries.firstOrNull { it.name == raw } ?: WeightUnit.LBS
+    }
+
+    suspend fun setWeightUnit(unit: WeightUnit) {
+        db.preferenceDao().set(PreferenceEntry(PREF_WEIGHT_UNIT, unit.name))
+    }
+
+    /** Weight tracking is opt-in and hidden by default, same as Cycle. */
+    suspend fun getWeightFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_WEIGHT_ENABLED)?.value == "true"
+    }
+
+    suspend fun setWeightFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_WEIGHT_ENABLED, value.toString()))
+    }
+
+    suspend fun getStartingWeight(): StartingWeightEntry? = db.startingWeightDao().get()
+
+    suspend fun setStartingWeight(weightKg: Double, date: String) {
+        db.startingWeightDao().set(StartingWeightEntry(weightKg = weightKg, date = date))
+    }
+
+    suspend fun addWeightEntry(weightKg: Double, date: String = todayStr()) {
+        db.weightDao().upsert(WeightEntry(date = date, weightKg = weightKg))
+    }
+
+    suspend fun getMostRecentWeightEntry(): WeightEntry? = db.weightDao().getMostRecent()
+
+    suspend fun getWeightHistory(limit: Int = 100): List<WeightEntry> = db.weightDao().getRecent(limit)
+
+    suspend fun deleteWeightEntry(date: String) = db.weightDao().deleteForDate(date)
+
+    suspend fun resetWeight() {
+        db.weightDao().resetAll()
+        db.startingWeightDao().reset()
+    }
+
+    /**
+     * Average weekly rate of change (signed — negative trending down,
+     * positive trending up) from the starting weight to the most recently
+     * logged entry. Deliberately reported as a single neutral "change" value
+     * rather than separate "loss"/"gain" figures. Returns null if there
+     * isn't enough data yet (no starting weight, no logged entry, or they
+     * share the same date).
+     */
+    suspend fun getAverageWeeklyWeightChangeKg(): Double? {
+        val start = db.startingWeightDao().get() ?: return null
+        val latest = db.weightDao().getMostRecent() ?: return null
+        if (latest.date == start.date) return null
+        val startDate = LocalDate.parse(start.date, DateTimeFormatter.ISO_LOCAL_DATE)
+        val latestDate = LocalDate.parse(latest.date, DateTimeFormatter.ISO_LOCAL_DATE)
+        val days = ChronoUnit.DAYS.between(startDate, latestDate)
+        if (days <= 0) return null
+        val weeks = days / 7.0
+        return (latest.weightKg - start.weightKg) / weeks
+    }
+
+    // ── Mood ──────────────────────────────────────────────────────────────────
+
+    /** Mood tracking is opt-in and hidden by default, same as Cycle and Weight. */
+    suspend fun getMoodFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_MOOD_ENABLED)?.value == "true"
+    }
+
+    suspend fun setMoodFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_MOOD_ENABLED, value.toString()))
+    }
+
+    suspend fun addMoodEntry(date: String, moods: List<Mood>, notes: String?) {
+        db.moodDao().insert(
+            MoodEntry(date = date, moods = encodeMoods(moods), notes = notes?.takeIf { it.isNotBlank() }),
+        )
+    }
+
+    suspend fun getMostRecentMoodEntry(): MoodEntry? = db.moodDao().getMostRecent()
+
+    suspend fun getMoodHistory(limit: Int = 100): List<MoodEntry> = db.moodDao().getRecent(limit)
+
+    suspend fun deleteMoodEntry(id: Long) = db.moodDao().deleteById(id)
+
+    /**
+     * Whether any Mood entries actually exist within a cycle's date range
+     * (start through end, or through today if still ongoing) — used so
+     * Cycle history can point to Mood history only when there's genuinely
+     * something there, rather than guessing from the current toggle state.
+     */
+    suspend fun hasMoodEntriesInRange(startDate: String, endDate: String?): Boolean {
+        val to = endDate ?: todayStr()
+        return db.moodDao().countInRange(startDate, to) > 0
+    }
+
+    suspend fun resetMood() = db.moodDao().resetAll()
+
+    /**
+     * Whether [date] falls within any logged cycle's range (start date
+     * through end date, or through today if the cycle is still ongoing).
+     * Used to gently cross-reference Mood history entries for people who
+     * track both, without requiring a second, duplicate mood entry per
+     * cycle — see Cycle's own mood field, which is skipped entirely (in
+     * favor of linking to this tracker) once Mood tracking is turned on.
+     */
+    suspend fun isDateWithinAnyCycle(date: String): Boolean {
+        val target = LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE)
+        val cycles = db.cycleDao().getRecent(50)
+        return cycles.any { cycle ->
+            val start = LocalDate.parse(cycle.startDate, DateTimeFormatter.ISO_LOCAL_DATE)
+            val end = cycle.endDate
+                ?.let { LocalDate.parse(it, DateTimeFormatter.ISO_LOCAL_DATE) }
+                ?: LocalDate.now()
+            !target.isBefore(start) && !target.isAfter(end)
+        }
+    }
+
     // ── Reset all ─────────────────────────────────────────────────────────────
 
     suspend fun resetAll() {
@@ -350,5 +590,8 @@ class TrackerRepository(private val db: TrackerDatabase) {
         db.stepDao().resetAll()
         db.sleepDao().resetAll()
         db.cycleDao().resetAll()
+        db.weightDao().resetAll()
+        db.startingWeightDao().reset()
+        db.moodDao().resetAll()
     }
 }

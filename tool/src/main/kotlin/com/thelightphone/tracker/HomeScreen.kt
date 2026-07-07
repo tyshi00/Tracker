@@ -42,6 +42,10 @@ data class HomeState(
     val waterUnit: String = "ml",
     val stepsDisplay: String = "0",
     val sleepDisplay: String = "0h 0m",
+    val moodEnabled: Boolean = false,
+    val moodDisplay: String = "",
+    val weightEnabled: Boolean = false,
+    val weightDisplay: String = "",
     val cycleEnabled: Boolean = false,
     val cycleNextDisplay: String = "",
 )
@@ -65,6 +69,26 @@ class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
             val waterMl = repo.getTodayWaterMl()
             val steps = repo.getTodaySteps()
             val sleepMin = repo.getPreviousDaySleepMinutes()
+
+            val moodEnabled = repo.getMoodFeatureEnabled()
+            val moodDisplay = if (moodEnabled) {
+                repo.getMostRecentMoodEntry()?.let { entry ->
+                    decodeMoods(entry.moods).joinToString(", ") { it.label }
+                } ?: "Not set"
+            } else {
+                ""
+            }
+
+            val weightEnabled = repo.getWeightFeatureEnabled()
+            val weightDisplay = if (weightEnabled) {
+                val weightUnit = repo.getWeightUnit()
+                repo.getMostRecentWeightEntry()?.let {
+                    "${WeightConversion.format(it.weightKg, weightUnit)} ${weightUnit.label}"
+                } ?: "Not set"
+            } else {
+                ""
+            }
+
             val cycleEnabled = repo.getCycleFeatureEnabled()
             val cycleNextDisplay = if (cycleEnabled) {
                 repo.predictNextCycleStart()?.let { dateLabel(it) } ?: "Not enough data yet"
@@ -77,6 +101,10 @@ class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
                 waterUnit = unit.label,
                 stepsDisplay = "%,d".format(steps),
                 sleepDisplay = formatSleep(sleepMin),
+                moodEnabled = moodEnabled,
+                moodDisplay = moodDisplay,
+                weightEnabled = weightEnabled,
+                weightDisplay = weightDisplay,
                 cycleEnabled = cycleEnabled,
                 cycleNextDisplay = cycleNextDisplay,
             )
@@ -144,6 +172,26 @@ class HomeScreen(sealedActivity: SealedLightActivity) :
                         value = state.sleepDisplay,
                         onClick = { navigateTo(screenFactory = { SleepScreen(it, repo) }) },
                     )
+
+                    if (state.moodEnabled) {
+                        Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
+
+                        TrackerHomeItem(
+                            label = "Mood",
+                            value = state.moodDisplay,
+                            onClick = { navigateTo(screenFactory = { MoodScreen(it, repo) }) },
+                        )
+                    }
+
+                    if (state.weightEnabled) {
+                        Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
+
+                        TrackerHomeItem(
+                            label = "Weight",
+                            value = state.weightDisplay,
+                            onClick = { navigateTo(screenFactory = { WeightScreen(it, repo) }) },
+                        )
+                    }
 
                     if (state.cycleEnabled) {
                         Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))

@@ -40,6 +40,8 @@ data class SettingsState(
     val invertColors: Boolean = false,
     val defaultWaterUnit: WaterUnit = WaterUnit.ML,
     val cycleTrackingEnabled: Boolean = false,
+    val weightTrackingEnabled: Boolean = false,
+    val moodTrackingEnabled: Boolean = false,
 )
 
 class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
@@ -52,6 +54,8 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
                 invertColors = repo.getInvertColors(),
                 defaultWaterUnit = repo.getWaterUnit(),
                 cycleTrackingEnabled = repo.getCycleFeatureEnabled(),
+                weightTrackingEnabled = repo.getWeightFeatureEnabled(),
+                moodTrackingEnabled = repo.getMoodFeatureEnabled(),
             )
         }
     }
@@ -70,6 +74,22 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
             val newValue = !_state.value.cycleTrackingEnabled
             repo.setCycleFeatureEnabled(newValue)
             _state.value = _state.value.copy(cycleTrackingEnabled = newValue)
+        }
+    }
+
+    fun toggleWeightTracking() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newValue = !_state.value.weightTrackingEnabled
+            repo.setWeightFeatureEnabled(newValue)
+            _state.value = _state.value.copy(weightTrackingEnabled = newValue)
+        }
+    }
+
+    fun toggleMoodTracking() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newValue = !_state.value.moodTrackingEnabled
+            repo.setMoodFeatureEnabled(newValue)
+            _state.value = _state.value.copy(moodTrackingEnabled = newValue)
         }
     }
 
@@ -142,6 +162,45 @@ class SettingsScreen(
                         // in that state — i.e. show TOGGLE_ON when NOT inverted.
                         LightIcon(
                             icon = if (state.invertColors) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
+                        )
+                    }
+
+                    // Track mood — opt-in, hidden by default. Controls whether
+                    // the Mood tile shows up on the Home screen.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.toggleMoodTracking() }
+                            .padding(vertical = 0.75f.gridUnitsAsDp()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        LightText(
+                            text = "Track mood",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier.weight(1f),
+                        )
+                        LightIcon(
+                            icon = if (state.moodTrackingEnabled) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
+                        )
+                    }
+
+                    // Track weight — opt-in, hidden by default, same reasoning
+                    // as Cycle. Controls whether the Weight tile shows up on
+                    // the Home screen.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.toggleWeightTracking() }
+                            .padding(vertical = 0.75f.gridUnitsAsDp()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        LightText(
+                            text = "Track weight",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier.weight(1f),
+                        )
+                        LightIcon(
+                            icon = if (state.weightTrackingEnabled) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
                         )
                     }
 

@@ -36,8 +36,31 @@ data class CycleEntry(
     val startDate: String, // YYYY-MM-DD
     val endDate: String? = null, // null while the cycle is still ongoing
     val flow: String? = null, // FlowLevel.name
-    val mood: String? = null, // Mood.name
+    val moods: String? = null, // comma-joined Mood.name values, up to 5 — only used when the standalone Mood tracker is off
     val energy: String? = null, // EnergyLevel.name
+)
+
+@Entity(tableName = "weight_entries")
+data class WeightEntry(
+    @PrimaryKey val date: String, // YYYY-MM-DD — one reading per day, like water/steps/sleep
+    val weightKg: Double = 0.0,
+)
+
+/** Singleton row (id is always 0) holding the one-time starting weight reference point. */
+@Entity(tableName = "starting_weight")
+data class StartingWeightEntry(
+    @PrimaryKey val id: Int = 0,
+    val weightKg: Double,
+    val date: String,
+)
+
+/** Multiple entries per day are allowed, like cycles — mood can shift through the day. */
+@Entity(tableName = "mood_entries")
+data class MoodEntry(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val date: String, // YYYY-MM-DD
+    val moods: String, // comma-joined Mood.name values, up to 5
+    val notes: String? = null,
 )
 
 @Entity(tableName = "preferences")
@@ -125,15 +148,75 @@ interface CycleDao {
     @Query("SELECT * FROM cycle_entries ORDER BY startDate DESC LIMIT :limit")
     suspend fun getRecent(limit: Int): List<CycleEntry>
 
+    @Query("DELETE FROM cycle_entries WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("DELETE FROM cycle_entries")
+    suspend fun resetAll()
+}
+
+@Dao
+interface WeightDao {
+    @Query("SELECT * FROM weight_entries WHERE date = :date LIMIT 1")
+    suspend fun getForDate(date: String): WeightEntry?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: WeightEntry)
+
+    @Query("SELECT * FROM weight_entries ORDER BY date DESC LIMIT 1")
+    suspend fun getMostRecent(): WeightEntry?
+
+    @Query("SELECT * FROM weight_entries ORDER BY date DESC LIMIT :limit")
+    suspend fun getRecent(limit: Int): List<WeightEntry>
+
+    @Query("DELETE FROM weight_entries WHERE date = :date")
+    suspend fun deleteForDate(date: String)
+
+    @Query("DELETE FROM weight_entries")
+    suspend fun resetAll()
+}
+
+@Dao
+interface StartingWeightDao {
+    @Query("SELECT * FROM starting_weight WHERE id = 0 LIMIT 1")
+    suspend fun get(): StartingWeightEntry?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun set(entry: StartingWeightEntry)
+
+    @Query("DELETE FROM starting_weight")
+    suspend fun reset()
+}
+
+@Dao
+interface MoodDao {
+    @Insert
+    suspend fun insert(entry: MoodEntry): Long
+
+    @Query("SELECT * FROM mood_entries ORDER BY date DESC, id DESC LIMIT 1")
+    suspend fun getMostRecent(): MoodEntry?
+
+    @Query("SELECT * FROM mood_entries ORDER BY date DESC, id DESC LIMIT :limit")
+    suspend fun getRecent(limit: Int): List<MoodEntry>
+
+    @Query("SELECT COUNT(*) FROM mood_entries WHERE date >= :from AND date <= :to")
+    suspend fun countInRange(from: String, to: String): Int
+
+    @Query("DELETE FROM mood_entries WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM mood_entries")
     suspend fun resetAll()
 }
 
 // ── Database ──────────────────────────────────────────────────────────────────
 
 @Database(
-    entities = [WaterEntry::class, StepEntry::class, SleepEntry::class, CycleEntry::class, PreferenceEntry::class],
-    version = 2,
+    entities = [
+        WaterEntry::class, StepEntry::class, SleepEntry::class, CycleEntry::class,
+        WeightEntry::class, StartingWeightEntry::class, MoodEntry::class, PreferenceEntry::class,
+    ],
+    version = 4,
     exportSchema = false,
 )
 abstract class TrackerDatabase : RoomDatabase() {
@@ -141,5 +224,8 @@ abstract class TrackerDatabase : RoomDatabase() {
     abstract fun stepDao(): StepDao
     abstract fun sleepDao(): SleepDao
     abstract fun cycleDao(): CycleDao
+    abstract fun weightDao(): WeightDao
+    abstract fun startingWeightDao(): StartingWeightDao
+    abstract fun moodDao(): MoodDao
     abstract fun preferenceDao(): PreferenceDao
 }

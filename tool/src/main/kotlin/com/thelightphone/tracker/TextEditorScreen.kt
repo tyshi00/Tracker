@@ -13,21 +13,21 @@ import com.thelightphone.sdk.ui.LightTextInputEditor
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
-import com.thelightphone.lp3Keyboard.ui.NumberLayout
 import java.util.UUID
 
-class NumberEditorScreen(
+/**
+ * Free-text entry screen (letters, not numbers) — used for Mood's notes
+ * field. Enforces [maxLength] by truncating on submit.
+ */
+class TextEditorScreen(
     sealedActivity: SealedLightActivity,
     private val title: String,
     private val initialValue: String,
-    @Suppress("UNUSED_PARAMETER") isDecimal: Boolean = false,
+    private val maxLength: Int = 250,
 ) : SimpleLightScreen<String>(sealedActivity) {
 
-    // Each screen instance needs its own keyboard ViewModel. The Activity's
-    // ViewModelStore is shared across screen instances (NumberEditorScreen is
-    // not a ViewModelStoreOwner), so keying off `title` alone would reuse a
-    // stale keyboard instance still wired to a previous, discarded text state
-    // — inputs would appear to only work the first time.
+    // See NumberEditorScreen for why this needs to be unique per instance —
+    // same reasoning applies here.
     private val editorInstanceKey = UUID.randomUUID().toString()
 
     @Composable
@@ -41,11 +41,13 @@ class NumberEditorScreen(
                 title = title,
                 state = textState,
                 keyboardOptionsFlow = keyboardOptionsFlow,
-                onSubmit = { result -> goBack(result.toString().trim()) },
+                onSubmit = { result -> goBack(result.toString().trim().take(maxLength)) },
                 onBack = { goBack(null) },
                 submitLabel = "DONE",
                 editorKey = editorInstanceKey,
-                initialLayout = NumberLayout,
+                showUnderline = false,
+                // Default (LowerCaseLayout) is exactly what we want here —
+                // no need to override, unlike NumberEditorScreen.
                 modifier = Modifier.background(LightThemeTokens.colors.background),
             )
         }

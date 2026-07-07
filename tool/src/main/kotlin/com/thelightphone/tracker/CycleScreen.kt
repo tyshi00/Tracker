@@ -20,7 +20,9 @@ import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
 import com.thelightphone.sdk.ui.LightScrollView
+import com.thelightphone.sdk.ui.LightText
 import com.thelightphone.sdk.ui.LightTextField
+import com.thelightphone.sdk.ui.LightTextVariant
 import com.thelightphone.sdk.ui.LightTheme
 import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
@@ -28,6 +30,7 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,10 +43,17 @@ data class CycleState(
     val startDate: String = todayStr(),
     val endDate: String? = null,
     val flow: FlowLevel? = null,
-    val mood: Mood? = null,
+    val moods: List<Mood> = emptyList(),
     val energy: EnergyLevel? = null,
     val nextExpectedDisplay: String = "Not enough data yet",
     val lastCycleDisplay: String = "None logged",
+    // Whether the standalone Mood tracker is on — checked every screen show
+    // (not just once) since it's an external setting, not something this
+    // screen edits itself. When true, Cycle's own Mood field is replaced by
+    // a shortcut into the Mood tracker instead, to avoid asking someone who
+    // tracks both to log mood twice during the same days.
+    val moodFeatureEnabled: Boolean = false,
+    val showSaved: Boolean = false,
 )
 
 class CycleViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
@@ -60,6 +70,10 @@ class CycleViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
     // read would stomp over the selection the person just made before they
     // had a chance to tap SAVE.
     private var loadedInitialState = false
+
+    // Guards against a slower, earlier save's delayed "hide" wiping out a
+    // more recent save's still-visible confirmation.
+    private var savedToken = 0L
 
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -85,7 +99,7 @@ class CycleViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
             startDate = editing?.startDate ?: todayStr(),
             endDate = editing?.endDate,
             flow = editing?.flow?.let { name -> FlowLevel.entries.firstOrNull { it.name == name } },
-            mood = editing?.mood?.let { name -> Mood.entries.firstOrNull { it.name == name } },
+            moods = decodeMoods(editing?.moods),
             energy = editing?.energy?.let { name -> EnergyLevel.entries.firstOrNull { it.name == name } },
         )
     }
@@ -98,6 +112,7 @@ class CycleViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
             lastCycleDisplay = recent?.let {
                 dateLabel(it.startDate) + (it.endDate?.let { end -> " – ${dateLabel(end)}" } ?: " (ongoing)")
             } ?: "None logged",
+            moodFeatureEnabled = repo.getMoodFeatureEnabled(),
         )
     }
 
@@ -113,8 +128,8 @@ class CycleViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
         _state.value = _state.value.copy(flow = flow)
     }
 
-    fun setMood(mood: Mood) {
-        _state.value = _state.value.copy(mood = mood)
+    fun setMoods(moods: List<Mood>) {
+        _state.value = _state.value.copy(moods = moods)
     }
 
     fun setEnergy(energy: EnergyLevel) {
@@ -130,7 +145,7 @@ class CycleViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
                     startDate = s.startDate,
                     endDate = s.endDate,
                     flow = s.flow,
-                    mood = s.mood,
+                    moods = s.moods,
                     energy = s.energy,
                 )
                 // Pick up the id if this save just inserted a new row (so
@@ -142,6 +157,15 @@ class CycleViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
                 val editing = recent?.takeIf { it.endDate == null }
                 _state.value = _state.value.copy(editingId = editing?.id)
                 refreshStatsOnly()
+
+                val myToken = ++savedToken
+                _state.value = _state.value.copy(showSaved = true)
+                viewModelScope.launch {
+                    delay(1500)
+                    if (savedToken == myToken) {
+                        _state.value = _state.value.copy(showSaved = false)
+                    }
+                }
             }
         }
     }
@@ -250,18 +274,49 @@ class CycleScreen(
 
                     LightTextField(
                         label = "Mood",
-                        value = state.mood?.label ?: "Not set",
+                        value = if (state.moodFeatureEnabled) {
+                            "Log in Mood tracker"
+                        } else if (state.moods.isEmpty()) {
+                            "Not set"
+                        } else {
+                            state.moods.joinToString(", ") { it.label }
+                        },
                         placeholder = "",
                         onClick = {
-                            navigateTo(
-                                screenFactory = { MoodPickerScreen(it, state.mood) },
-                                resultCallback = { result ->
-                                    if (result != null) viewModel.setMood(result)
-                                },
-                            )
+                            if (state.moodFeatureEnabled) {
+                                // Mood tracking is on — log there instead of
+                                // keeping a second, separate mood field here,
+                                // so tracking both isn't a double entry.
+                                // Defaults to today (not the cycle's start
+                                // date) since this is meant for logging
+                                // however you feel right now — backdating is
+                                // still available from inside Mood itself.
+                                navigateTo(
+                                    screenFactory = {
+                                        MoodScreen(it, repo, initialDate = todayStr())
+                                    },
+                                )
+                            } else {
+                                navigateTo(
+                                    screenFactory = { MoodMultiPickerScreen(it, state.moods) },
+                                    resultCallback = { result ->
+                                        if (result != null) viewModel.setMoods(result)
+                                    },
+                                )
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3,
                     )
+
+                    if (state.moodFeatureEnabled) {
+                        LightText(
+                            text = "Logs one day — add more days in Mood",
+                            variant = LightTextVariant.Fine,
+                            lighten = true,
+                            modifier = Modifier.padding(top = 0.4f.gridUnitsAsDp()),
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(1.5f.gridUnitsAsDp()))
 
@@ -285,6 +340,17 @@ class CycleScreen(
                     StatRow(label = "Next expected", value = state.nextExpectedDisplay)
                     Spacer(modifier = Modifier.height(1f.gridUnitsAsDp()))
                     StatRow(label = "Last cycle", value = state.lastCycleDisplay)
+                }
+
+                if (state.showSaved) {
+                    LightText(
+                        text = "Saved",
+                        variant = LightTextVariant.Fine,
+                        lighten = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 1f.gridUnitsAsDp(), vertical = 0.5f.gridUnitsAsDp()),
+                    )
                 }
 
                 LightBottomBar(

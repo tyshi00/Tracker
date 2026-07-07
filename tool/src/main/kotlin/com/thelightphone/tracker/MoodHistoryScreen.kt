@@ -37,23 +37,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-data class CycleHistoryItem(
+data class MoodHistoryItem(
     val id: Long,
-    val startDate: String,
-    val dateRangeDisplay: String,
-    val flowDisplay: String,
-    val moodDisplay: String,
-    val energyDisplay: String,
+    val date: String,
+    val dateDisplay: String,
+    val moodsDisplay: String,
+    val notesDisplay: String?,
+    val duringCycle: Boolean,
 )
 
-data class CycleHistoryState(
-    val entries: List<CycleHistoryItem> = emptyList(),
+data class MoodHistoryState(
+    val entries: List<MoodHistoryItem> = emptyList(),
     val loaded: Boolean = false,
 )
 
-class CycleHistoryViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
-    private val _state = MutableStateFlow(CycleHistoryState())
-    val state: StateFlow<CycleHistoryState> = _state.asStateFlow()
+class MoodHistoryViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
+    private val _state = MutableStateFlow(MoodHistoryState())
+    val state: StateFlow<MoodHistoryState> = _state.asStateFlow()
 
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         reload()
@@ -61,36 +61,23 @@ class CycleHistoryViewModel(private val repo: TrackerRepository) : LightViewMode
 
     private fun reload() {
         viewModelScope.launch(Dispatchers.IO) {
-            val history = repo.getCycleHistory()
-            val items = history.map { entry ->
-                val ownMoods = decodeMoods(entry.moods)
-                val moodDisplay = if (ownMoods.isNotEmpty()) {
-                    ownMoods.joinToString(", ") { it.label }
-                } else if (repo.hasMoodEntriesInRange(entry.startDate, entry.endDate)) {
-                    // Nothing stored directly on this cycle, but real Mood
-                    // entries exist within its date range — point there
-                    // instead of showing a misleading "Not set".
-                    "See Mood history"
-                } else {
-                    "Not set"
-                }
+            val history = repo.getMoodHistory()
+            // Only bother cross-referencing cycles if Cycle tracking is
+            // actually in use — no point checking otherwise.
+            val cycleTrackingOn = repo.getCycleFeatureEnabled()
 
-                CycleHistoryItem(
+            val items = history.map { entry ->
+                MoodHistoryItem(
                     id = entry.id,
-                    startDate = entry.startDate,
-                    dateRangeDisplay = dateLabel(entry.startDate) +
-                        (entry.endDate?.let { " – ${dateLabel(it)}" } ?: " (ongoing)"),
-                    flowDisplay = entry.flow
-                        ?.let { name -> FlowLevel.entries.firstOrNull { it.name == name }?.label }
-                        ?: "Not set",
-                    moodDisplay = moodDisplay,
-                    energyDisplay = entry.energy
-                        ?.let { name -> EnergyLevel.entries.firstOrNull { it.name == name }?.label }
-                        ?: "Not set",
+                    date = entry.date,
+                    dateDisplay = dateLabel(entry.date),
+                    moodsDisplay = decodeMoods(entry.moods).joinToString(", ") { it.label },
+                    notesDisplay = entry.notes?.takeIf { it.isNotBlank() },
+                    duringCycle = cycleTrackingOn && repo.isDateWithinAnyCycle(entry.date),
                 )
             }
-            _state.value = CycleHistoryState(
-                entries = items.sortedByDescending { it.startDate },
+            _state.value = MoodHistoryState(
+                entries = items.sortedWith(compareByDescending<MoodHistoryItem> { it.date }.thenByDescending { it.id }),
                 loaded = true,
             )
         }
@@ -98,21 +85,21 @@ class CycleHistoryViewModel(private val repo: TrackerRepository) : LightViewMode
 
     fun deleteEntry(id: Long) {
         viewModelScope.launch(Dispatchers.IO) {
-            repo.deleteCycleEntry(id)
+            repo.deleteMoodEntry(id)
             reload()
         }
     }
 }
 
-class CycleHistoryScreen(
+class MoodHistoryScreen(
     sealedActivity: SealedLightActivity,
     private val repo: TrackerRepository,
-) : LightScreen<Unit, CycleHistoryViewModel>(sealedActivity) {
+) : LightScreen<Unit, MoodHistoryViewModel>(sealedActivity) {
 
-    override val viewModelClass: Class<CycleHistoryViewModel>
-        get() = CycleHistoryViewModel::class.java
+    override val viewModelClass: Class<MoodHistoryViewModel>
+        get() = MoodHistoryViewModel::class.java
 
-    override fun createViewModel() = CycleHistoryViewModel(repo)
+    override fun createViewModel() = MoodHistoryViewModel(repo)
 
     @Composable
     override fun Content() {
@@ -130,7 +117,7 @@ class CycleHistoryScreen(
                         icon = LightIcons.BACK,
                         onClick = { goBack() },
                     ),
-                    center = LightTopBarCenter.Text("Cycle history"),
+                    center = LightTopBarCenter.Text("Mood history"),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 
@@ -143,7 +130,7 @@ class CycleHistoryScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         LightText(
-                            text = "No cycles logged yet.",
+                            text = "No moods logged yet.",
                             variant = LightTextVariant.Copy,
                             lighten = true,
                         )
@@ -156,14 +143,14 @@ class CycleHistoryScreen(
                             .padding(horizontal = 1f.gridUnitsAsDp()),
                     ) {
                         state.entries.forEachIndexed { index, item ->
-                            CycleHistoryRow(
+                            MoodHistoryRow(
                                 item = item,
                                 onClick = {
                                     navigateTo(
                                         screenFactory = {
                                             ConfirmResetScreen(
                                                 it,
-                                                "Delete this cycle entry?",
+                                                "Delete this mood entry?",
                                                 title = "Confirm deletion",
                                                 confirmLabel = "DELETE",
                                             )
@@ -188,32 +175,29 @@ class CycleHistoryScreen(
 }
 
 @Composable
-private fun CycleHistoryRow(item: CycleHistoryItem, onClick: () -> Unit) {
+private fun MoodHistoryRow(item: MoodHistoryItem, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
     ) {
         LightText(
-            text = item.dateRangeDisplay,
+            text = if (item.duringCycle) "${item.dateDisplay} (during cycle)" else item.dateDisplay,
             variant = LightTextVariant.Copy,
         )
         Spacer(modifier = Modifier.height(0.25f.gridUnitsAsDp()))
         LightText(
-            text = "Flow: ${item.flowDisplay}",
+            text = item.moodsDisplay,
             variant = LightTextVariant.Fine,
             lighten = true,
         )
-        LightText(
-            text = "Mood: ${item.moodDisplay}",
-            variant = LightTextVariant.Fine,
-            lighten = true,
-        )
-        LightText(
-            text = "Energy: ${item.energyDisplay}",
-            variant = LightTextVariant.Fine,
-            lighten = true,
-        )
+        item.notesDisplay?.let { notes ->
+            LightText(
+                text = notes,
+                variant = LightTextVariant.Fine,
+                lighten = true,
+            )
+        }
     }
 }
 

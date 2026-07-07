@@ -48,12 +48,14 @@ fun LightTextInputEditor(
     submitIcon: LightIconConfiguration? = null,
     showBackButton: Boolean = true,
     editorKey: Any = title,
+    initialLayout: Layout = LowerCaseLayout,
+    showUnderline: Boolean = true,
 ) {
     val keyboardCallback = remember(state) { TextInputKeyboardCallback(state) }
 
     val keyboardViewModel: Lp3KeyboardViewModel = viewModel<DefaultLp3KeyboardViewModel>(
         key = "LightTextInputEditor-$editorKey",
-        factory = factory(keyboardCallback, keyboardOptionsFlow),
+        factory = factory(keyboardCallback, keyboardOptionsFlow, initialLayout),
     )
 
     LightTextInputEditor(
@@ -66,6 +68,7 @@ fun LightTextInputEditor(
         submitLabel,
         submitIcon,
         showBackButton,
+        showUnderline,
     )
 }
 
@@ -87,9 +90,10 @@ fun LightTextInputEditor(
     submitLabel: String = "SUBMIT",
     submitIcon: LightIconConfiguration? = null,
     showBackButton: Boolean = true,
+    showUnderline: Boolean = true,
 ) {
     val colors = LightThemeTokens.colors
-    val inputStyle = lightInputTextStyle()
+    val inputStyle = lightInputTextStyle(showUnderline)
     var textLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
 
     Surface {
@@ -176,7 +180,8 @@ fun LightTextInputEditor(
 
 private fun factory(
     callback: Lp3RepeatableKeyboardCallback,
-    keyboardOptionsFlow: StateFlow<KeyboardOptions>
+    keyboardOptionsFlow: StateFlow<KeyboardOptions>,
+    initialLayout: Layout = LowerCaseLayout,
 ): ViewModelProvider.Factory =
     object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -184,6 +189,7 @@ private fun factory(
             return DefaultLp3KeyboardViewModel(
                 callback,
                 keyboardOptionsFlow = keyboardOptionsFlow,
+                initialLayout = initialLayout,
                 optionsForLayout = {
                     val showCloseButton = when (it) {
                         EmojiLayout, is ExtendedCharKeyboard -> true
@@ -197,13 +203,13 @@ private fun factory(
     }
 
 @Composable
-private fun lightInputTextStyle(): TextStyle {
+private fun lightInputTextStyle(showUnderline: Boolean = true): TextStyle {
     val colors = LightThemeTokens.colors
     val t = LightThemeTokens.typography
     return t.heading
         .copy(
             color = colors.content,
-            textDecoration = TextDecoration.Underline,
+            textDecoration = if (showUnderline) TextDecoration.Underline else TextDecoration.None,
         )
         .scaledForScreenHeight()
 }

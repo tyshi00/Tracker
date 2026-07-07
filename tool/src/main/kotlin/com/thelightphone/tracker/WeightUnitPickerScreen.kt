@@ -24,10 +24,10 @@ import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 
-class FlowPickerScreen(
+class WeightUnitPickerScreen(
     sealedActivity: SealedLightActivity,
-    private val currentFlow: FlowLevel?,
-) : SimpleLightScreen<FlowLevel>(sealedActivity) {
+    private val currentUnit: WeightUnit,
+) : SimpleLightScreen<WeightUnit>(sealedActivity) {
 
     @Composable
     override fun Content() {
@@ -44,7 +44,7 @@ class FlowPickerScreen(
                         icon = LightIcons.BACK,
                         onClick = { goBack(null) },
                     ),
-                    center = LightTopBarCenter.Text("Flow"),
+                    center = LightTopBarCenter.Text("Unit"),
                     modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
                 )
 
@@ -53,57 +53,11 @@ class FlowPickerScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 1f.gridUnitsAsDp()),
                 ) {
-                    FlowLevel.entries.forEach { option ->
+                    WeightUnit.entries.forEach { option ->
                         LightText(
                             text = option.label,
                             variant = LightTextVariant.Copy,
-                            lighten = option == currentFlow,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { goBack(option) }
-                                .padding(vertical = 0.75f.gridUnitsAsDp()),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-class EnergyPickerScreen(
-    sealedActivity: SealedLightActivity,
-    private val currentEnergy: EnergyLevel?,
-) : SimpleLightScreen<EnergyLevel>(sealedActivity) {
-
-    @Composable
-    override fun Content() {
-        val themeColors by LightThemeController.colors.collectAsState()
-
-        LightTheme(colors = themeColors) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(LightThemeTokens.colors.background),
-            ) {
-                LightTopBar(
-                    leftButton = LightBarButton.LightIcon(
-                        icon = LightIcons.BACK,
-                        onClick = { goBack(null) },
-                    ),
-                    center = LightTopBarCenter.Text("Energy"),
-                    modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
-                )
-
-                LightScrollView(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 1f.gridUnitsAsDp()),
-                ) {
-                    EnergyLevel.entries.forEach { option ->
-                        LightText(
-                            text = option.label,
-                            variant = LightTextVariant.Copy,
-                            lighten = option == currentEnergy,
+                            lighten = option == currentUnit,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { goBack(option) }

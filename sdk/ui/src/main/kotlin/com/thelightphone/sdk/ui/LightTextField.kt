@@ -28,6 +28,7 @@ fun LightTextField(
     placeholder: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    maxLines: Int = 1,
 ) {
     val colors = LightThemeTokens.colors
     Column(modifier = modifier.fillMaxWidth()) {
@@ -46,7 +47,7 @@ fun LightTextField(
             LightText(
                 text = if (isPlaceholder) placeholder else value,
                 variant = LightTextVariant.Copy,
-                maxLines = 1,
+                maxLines = maxLines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(),
             )
