@@ -42,6 +42,7 @@ data class SettingsState(
     val cycleTrackingEnabled: Boolean = false,
     val weightTrackingEnabled: Boolean = false,
     val moodTrackingEnabled: Boolean = false,
+    val timeFormat: TimeFormat = TimeFormat.AM_PM,
 )
 
 class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
@@ -56,6 +57,7 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
                 cycleTrackingEnabled = repo.getCycleFeatureEnabled(),
                 weightTrackingEnabled = repo.getWeightFeatureEnabled(),
                 moodTrackingEnabled = repo.getMoodFeatureEnabled(),
+                timeFormat = repo.getTimeFormat(),
             )
         }
     }
@@ -90,6 +92,13 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
             val newValue = !_state.value.moodTrackingEnabled
             repo.setMoodFeatureEnabled(newValue)
             _state.value = _state.value.copy(moodTrackingEnabled = newValue)
+        }
+    }
+
+    fun setTimeFormat(format: TimeFormat) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.setTimeFormat(format)
+            _state.value = _state.value.copy(timeFormat = format)
         }
     }
 
@@ -248,6 +257,37 @@ class SettingsScreen(
                             )
                             LightText(
                                 text = state.defaultWaterUnit.label,
+                                variant = LightTextVariant.Fine,
+                                lighten = true,
+                            )
+                        }
+                        LightIcon(icon = LightIcons.ARROW_RIGHT)
+                    }
+
+                    // Time format — affects how Sleep's time fields are entered
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                navigateTo(
+                                    screenFactory = {
+                                        TimeFormatPickerScreen(it, state.timeFormat)
+                                    },
+                                    resultCallback = { result ->
+                                        if (result != null) viewModel.setTimeFormat(result)
+                                    },
+                                )
+                            }
+                            .padding(vertical = 0.75f.gridUnitsAsDp()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            LightText(
+                                text = "Time format",
+                                variant = LightTextVariant.Copy,
+                            )
+                            LightText(
+                                text = state.timeFormat.label,
                                 variant = LightTextVariant.Fine,
                                 lighten = true,
                             )

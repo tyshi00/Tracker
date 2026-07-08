@@ -24,10 +24,20 @@ data class StepEntry(
     val totalSteps: Int = 0,
 )
 
+/**
+ * Sleep is stored as discrete sessions (bedtime → wake time) rather than a
+ * single daily total, since a night's sleep almost always spans two
+ * calendar dates. Multiple sessions per night are allowed (e.g. a nap),
+ * same reasoning as Cycle/Mood.
+ */
 @Entity(tableName = "sleep_entries")
 data class SleepEntry(
-    @PrimaryKey val date: String,
-    val totalMinutes: Int = 0,
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val bedDate: String, // YYYY-MM-DD — the date bedtime was on
+    val bedTimeMinutes: Int, // minutes since midnight, 0-1439
+    val wakeDate: String, // YYYY-MM-DD — inferred: bedDate, or bedDate+1 if wake crossed midnight
+    val wakeTimeMinutes: Int, // minutes since midnight, 0-1439
+    val durationMinutes: Int, // precomputed so averages don't need to recompute this every time
 )
 
 @Entity(tableName = "cycle_entries")
@@ -109,19 +119,25 @@ interface StepDao {
 
 @Dao
 interface SleepDao {
-    @Query("SELECT * FROM sleep_entries WHERE date = :date LIMIT 1")
-    suspend fun getForDate(date: String): SleepEntry?
+    @Insert
+    suspend fun insert(entry: SleepEntry): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(entry: SleepEntry)
+    @Query("SELECT * FROM sleep_entries ORDER BY bedDate DESC, wakeTimeMinutes DESC, id DESC LIMIT 1")
+    suspend fun getMostRecent(): SleepEntry?
 
-    @Query("SELECT * FROM sleep_entries WHERE date >= :from ORDER BY date DESC")
+    @Query("SELECT * FROM sleep_entries WHERE bedDate >= :from ORDER BY bedDate DESC")
     suspend fun getFrom(from: String): List<SleepEntry>
 
-    @Query("SELECT * FROM sleep_entries WHERE date >= :from AND date < :to ORDER BY date DESC")
+    @Query("SELECT * FROM sleep_entries WHERE bedDate >= :from AND bedDate < :to ORDER BY bedDate DESC")
     suspend fun getBetween(from: String, to: String): List<SleepEntry>
 
-    @Query("UPDATE sleep_entries SET totalMinutes = 0")
+    @Query("SELECT * FROM sleep_entries ORDER BY bedDate DESC, wakeTimeMinutes DESC, id DESC LIMIT :limit")
+    suspend fun getRecent(limit: Int): List<SleepEntry>
+
+    @Query("DELETE FROM sleep_entries WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM sleep_entries")
     suspend fun resetAll()
 }
 
@@ -196,6 +212,9 @@ interface MoodDao {
     @Query("SELECT * FROM mood_entries ORDER BY date DESC, id DESC LIMIT 1")
     suspend fun getMostRecent(): MoodEntry?
 
+    @Query("SELECT * FROM mood_entries WHERE date = :date ORDER BY id DESC LIMIT 1")
+    suspend fun getMostRecentForDate(date: String): MoodEntry?
+
     @Query("SELECT * FROM mood_entries ORDER BY date DESC, id DESC LIMIT :limit")
     suspend fun getRecent(limit: Int): List<MoodEntry>
 
@@ -216,7 +235,7 @@ interface MoodDao {
         WaterEntry::class, StepEntry::class, SleepEntry::class, CycleEntry::class,
         WeightEntry::class, StartingWeightEntry::class, MoodEntry::class, PreferenceEntry::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class TrackerDatabase : RoomDatabase() {

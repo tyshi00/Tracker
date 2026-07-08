@@ -5,15 +5,18 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +34,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.thelightphone.lp3Keyboard.ui.*
 import com.thelightphone.sdk.ui.keyboard.LightEmbeddedLp3Keyboard
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import com.thelightphone.sdk.ui.keyboard.TextInputKeyboardCallback
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -111,48 +116,68 @@ fun LightTextInputEditor(
                 modifier = Modifier.padding(bottom = 1f.gridUnitsAsDp()),
             )
 
+            val scrollState = rememberScrollState()
+            val scrollBarScope = rememberCoroutineScope()
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 2f.gridUnitsAsDp())
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            textLayout?.let { layout ->
-                                state.edit {
-                                    selection =
-                                        TextRange(layout.getOffsetForPosition(down.position))
-                                }
-                            }
-                            drag(down.id) { change ->
+                    .fillMaxWidth(),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 2f.gridUnitsAsDp())
+                        .verticalScroll(scrollState)
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
                                 textLayout?.let { layout ->
                                     state.edit {
                                         selection =
-                                            TextRange(layout.getOffsetForPosition(change.position))
+                                            TextRange(layout.getOffsetForPosition(down.position))
                                     }
                                 }
-                                change.consume()
+                                drag(down.id) { change ->
+                                    textLayout?.let { layout ->
+                                        state.edit {
+                                            selection =
+                                                TextRange(layout.getOffsetForPosition(change.position))
+                                        }
+                                    }
+                                    change.consume()
+                                }
                             }
-                        }
-                    },
-                contentAlignment = Alignment.TopStart,
-            ) {
-                BasicText(
-                    text = state.text.toString(),
-                    style = inputStyle,
-                    onTextLayout = { textLayout = it },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                textLayout?.let { layout ->
-                    val cursorPos = state.selection.min.coerceIn(0, layout.layoutInput.text.length)
-                    val rect = layout.getCursorRect(cursorPos)
-                    Box(
+                        },
+                    contentAlignment = Alignment.TopStart,
+                ) {
+                    BasicText(
+                        text = state.text.toString(),
+                        style = inputStyle,
+                        onTextLayout = { textLayout = it },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    textLayout?.let { layout ->
+                        val cursorPos = state.selection.min.coerceIn(0, layout.layoutInput.text.length)
+                        val rect = layout.getCursorRect(cursorPos)
+                        Box(
+                            modifier = Modifier
+                                .offset { IntOffset(rect.left.toInt(), rect.top.toInt()) }
+                                .width(2.dp)
+                                .height(with(LocalDensity.current) { rect.height.toDp() })
+                                .background(colors.content),
+                        )
+                    }
+                }
+                if (scrollState.maxValue > 0) {
+                    LightScrollBar(
+                        scrollValue = scrollState.value.toFloat(),
+                        maxScrollValue = scrollState.maxValue.toFloat(),
+                        onScrollTo = { target ->
+                            scrollBarScope.launch { scrollState.scrollTo(target.roundToInt()) }
+                        },
                         modifier = Modifier
-                            .offset { IntOffset(rect.left.toInt(), rect.top.toInt()) }
-                            .width(2.dp)
-                            .height(with(LocalDensity.current) { rect.height.toDp() })
-                            .background(colors.content),
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight(),
                     )
                 }
             }

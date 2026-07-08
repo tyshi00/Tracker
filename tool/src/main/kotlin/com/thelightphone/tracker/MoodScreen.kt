@@ -15,7 +15,6 @@ import androidx.lifecycle.viewModelScope
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
-import com.thelightphone.sdk.SimpleLightScreen
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
 import com.thelightphone.sdk.ui.LightIcons
@@ -51,15 +50,19 @@ class MoodViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
     private val _state = MutableStateFlow(MoodState())
     val state: StateFlow<MoodState> = _state.asStateFlow()
 
-    // Every save creates a brand new entry (multiple per day allowed, like
-    // Cycle) — there's no persistent "in progress" record to load here, so
-    // unlike Cycle/Weight this screen doesn't need the "load once" pattern;
-    // nothing is ever read from the database into these editable fields.
+    // Every save creates a brand new entry (multiple per day allowed) and
+    // the form clears back to blank right after — so you can log a second,
+    // different mood later the same day without the previous entry's
+    // selections still sitting there.
     private val dbMutex = Mutex()
 
     // Guards against a slower, earlier save's delayed "hide" wiping out a
     // more recent save's still-visible confirmation.
     private var savedToken = 0L
+
+    fun setInitialDate(date: String) {
+        _state.value = _state.value.copy(selectedDate = date)
+    }
 
     fun setDate(date: String) {
         _state.value = _state.value.copy(selectedDate = date)
@@ -76,6 +79,7 @@ class MoodViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
     fun save() {
         val s = _state.value
         if (s.selectedMoods.isEmpty()) return
+
         viewModelScope.launch(Dispatchers.IO) {
             dbMutex.withLock {
                 repo.addMoodEntry(s.selectedDate, s.selectedMoods, s.notes)
@@ -112,7 +116,7 @@ class MoodScreen(
         get() = MoodViewModel::class.java
 
     override fun createViewModel() = MoodViewModel(repo).also {
-        if (initialDate != null) it.setDate(initialDate)
+        if (initialDate != null) it.setInitialDate(initialDate)
     }
 
     @Composable
@@ -161,7 +165,7 @@ class MoodScreen(
                     LightTextField(
                         label = "Mood",
                         value = if (state.selectedMoods.isEmpty()) {
-                            "Not set"
+                            "How are you today?"
                         } else {
                             state.selectedMoods.joinToString(", ") { it.label }
                         },

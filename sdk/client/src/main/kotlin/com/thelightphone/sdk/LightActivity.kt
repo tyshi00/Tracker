@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.SaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
@@ -29,9 +31,18 @@ private class BackStackEntry<T>(
     val screen: SimpleLightScreen<T>,
     val callback: ((T) -> Unit)? = null,
 ) {
+    // SaveableStateProvider requires a Bundle-compatible key (String, Int,
+    // Parcelable, etc.) — the BackStackEntry object itself isn't one, so it
+    // can't be used directly as the key without crashing on first render.
+    val id: String = "screen-${nextId++}"
+
     fun deliverResult() {
         val result = screen.result ?: return
         callback?.invoke(result)
+    }
+
+    companion object {
+        private var nextId = 0L
     }
 }
 
@@ -39,6 +50,11 @@ class LightActivity internal constructor() : ComponentActivity() {
 
     private val backStack = mutableListOf<BackStackEntry<*>>()
     private val currentScreen = mutableStateOf<BackStackEntry<*>?>(null)
+
+    // Set once from within setContent (rememberSaveableStateHolder needs a
+    // composition), then read from goBack() to clean up a permanently-popped
+    // screen's cached state. See setContent below for why this exists.
+    private var saveableStateHolderRef: SaveableStateHolder? = null
     private var contentReady = false
     private val createdAt = android.os.SystemClock.elapsedRealtime()
 
@@ -56,6 +72,10 @@ class LightActivity internal constructor() : ComponentActivity() {
         popped.notifyWillHide()
         popped.destroy()
         backStack.removeAt(backStack.lastIndex)
+        // This entry is gone for good — drop its cached UI state rather than
+        // holding onto it forever (SaveableStateProvider otherwise keeps it
+        // around indefinitely to support the "navigate away and back" case).
+        saveableStateHolderRef?.removeState(current.id)
         if (backStack.isEmpty()) {
             finish()
             return
@@ -95,6 +115,8 @@ class LightActivity internal constructor() : ComponentActivity() {
 
         setContent {
             androidx.compose.runtime.LaunchedEffect(Unit) { contentReady = true }
+            val saveableStateHolder = rememberSaveableStateHolder()
+            saveableStateHolderRef = saveableStateHolder
             val entry = currentScreen.value
             if (entry != null) {
                 val screen = entry.screen
@@ -104,12 +126,16 @@ class LightActivity internal constructor() : ComponentActivity() {
                             .weight(1f)
                             .fillMaxWidth(),
                     ) {
-                        // Keying by the BackStackEntry's identity forces Compose to
-                        // treat each screen instance as a distinct composition, so
-                        // remembered state (e.g. a text field's keyboard connection)
-                        // from a screen we passed through can't leak into the next
-                        // screen shown at this same call site.
-                        androidx.compose.runtime.key(entry) {
+                        // SaveableStateProvider (not bare key()) so a screen's UI
+                        // state — e.g. scroll position — survives navigating away
+                        // and back. key() only caches a single keyed subtree at a
+                        // time: navigating to a sub-screen discards the parent's
+                        // composition outright, so returning to it (even though
+                        // it's the same BackStackEntry) starts fresh, resetting
+                        // scroll position to the top. SaveableStateProvider keeps
+                        // each entry's state cached across such round trips, the
+                        // same mechanism Navigation-Compose's NavHost uses.
+                        saveableStateHolder.SaveableStateProvider(entry.id) {
                             val content: @Composable () -> Unit = { screen.Content() }
                             if (screen is ViewModelStoreOwner) {
                                 CompositionLocalProvider(

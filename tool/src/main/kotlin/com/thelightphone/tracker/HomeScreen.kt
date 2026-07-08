@@ -68,13 +68,13 @@ class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
 
             val waterMl = repo.getTodayWaterMl()
             val steps = repo.getTodaySteps()
-            val sleepMin = repo.getPreviousDaySleepMinutes()
+            val sleepMin = repo.getMostRecentSleepDurationMinutes() ?: 0
 
             val moodEnabled = repo.getMoodFeatureEnabled()
             val moodDisplay = if (moodEnabled) {
                 repo.getMostRecentMoodEntry()?.let { entry ->
                     decodeMoods(entry.moods).joinToString(", ") { it.label }
-                } ?: "Not set"
+                } ?: "How are you today?"
             } else {
                 ""
             }

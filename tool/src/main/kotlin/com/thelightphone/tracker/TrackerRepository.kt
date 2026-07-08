@@ -254,6 +254,54 @@ fun recentDateOptions(days: Int = 14): List<String> {
     }
 }
 
+enum class AmPm(val label: String) {
+    AM("AM"),
+    PM("PM"),
+}
+
+enum class TimeFormat(val label: String) {
+    AM_PM("AM/PM"),
+    HOUR_24("24-hour"),
+}
+
+/** Converts a 12-hour clock reading to minutes since midnight (0-1439). */
+fun to24HourMinutes(hour12: Int, minute: Int, ampm: AmPm): Int {
+    val clampedHour = hour12.coerceIn(1, 12)
+    val clampedMinute = minute.coerceIn(0, 59)
+    val hour24 = when {
+        ampm == AmPm.AM && clampedHour == 12 -> 0
+        ampm == AmPm.PM && clampedHour != 12 -> clampedHour + 12
+        else -> clampedHour
+    }
+    return hour24 * 60 + clampedMinute
+}
+
+/** Converts a 24-hour clock reading to minutes since midnight (0-1439). */
+fun to24HourFormatMinutes(hour24: Int, minute: Int): Int {
+    return hour24.coerceIn(0, 23) * 60 + minute.coerceIn(0, 59)
+}
+
+/**
+ * Duration between an explicit sleep date+time and an explicit wake
+ * date+time. Since both dates are entered directly (not inferred), this is
+ * just a plain date-time subtraction — can come out negative if wake was
+ * set before sleep, which callers should treat as an invalid entry.
+ */
+fun computeSleepDurationMinutes(
+    sleepDate: String,
+    sleepMinutesOfDay: Int,
+    wakeDate: String,
+    wakeMinutesOfDay: Int,
+): Int {
+    val sleepDateTime = LocalDate.parse(sleepDate, DateTimeFormatter.ISO_LOCAL_DATE)
+        .atStartOfDay()
+        .plusMinutes(sleepMinutesOfDay.toLong())
+    val wakeDateTime = LocalDate.parse(wakeDate, DateTimeFormatter.ISO_LOCAL_DATE)
+        .atStartOfDay()
+        .plusMinutes(wakeMinutesOfDay.toLong())
+    return ChronoUnit.MINUTES.between(sleepDateTime, wakeDateTime).toInt()
+}
+
 class TrackerRepository(private val db: TrackerDatabase) {
 
     companion object {
@@ -263,6 +311,7 @@ class TrackerRepository(private val db: TrackerDatabase) {
         const val PREF_WEIGHT_UNIT = "weight_unit"
         const val PREF_WEIGHT_ENABLED = "weight_feature_enabled"
         const val PREF_MOOD_ENABLED = "mood_feature_enabled"
+        const val PREF_TIME_FORMAT = "time_format"
         private const val DB_NAME = "tracker.db"
 
         @Volatile private var INSTANCE: TrackerRepository? = null
@@ -367,27 +416,45 @@ class TrackerRepository(private val db: TrackerDatabase) {
 
     // ── Sleep ─────────────────────────────────────────────────────────────────
 
-    suspend fun getTodaySleepMinutes(): Int =
-        db.sleepDao().getForDate(todayStr())?.totalMinutes ?: 0
-
     /**
-     * Sleep is logged the morning after — what you enter "today" is last
-     * night's sleep. The Home screen shows this (yesterday's entry) rather
-     * than today's, since today's sleep entry won't exist until tomorrow.
+     * Logs a sleep session from bedtime to wake time. [wakeDate] is inferred
+     * by the caller: if wake time-of-day is earlier than (or equal to) bed
+     * time-of-day, sleep crossed midnight and wake is the next calendar day;
+     * otherwise it's a same-day session (e.g. a nap).
      */
-    suspend fun getPreviousDaySleepMinutes(): Int =
-        db.sleepDao().getForDate(previousDayStr())?.totalMinutes ?: 0
-
-    suspend fun addSleep(hours: Int, minutes: Int, date: String = todayStr()) {
-        val total = hours * 60 + minutes
-        val existing = db.sleepDao().getForDate(date)?.totalMinutes ?: 0
-        db.sleepDao().upsert(SleepEntry(date = date, totalMinutes = existing + total))
+    suspend fun addSleepSession(
+        bedDate: String,
+        bedTimeMinutes: Int,
+        wakeDate: String,
+        wakeTimeMinutes: Int,
+    ) {
+        val duration = computeSleepDurationMinutes(bedDate, bedTimeMinutes, wakeDate, wakeTimeMinutes)
+            .coerceAtLeast(0)
+        db.sleepDao().insert(
+            SleepEntry(
+                bedDate = bedDate,
+                bedTimeMinutes = bedTimeMinutes,
+                wakeDate = wakeDate,
+                wakeTimeMinutes = wakeTimeMinutes,
+                durationMinutes = duration,
+            ),
+        )
     }
 
+    suspend fun getMostRecentSleepSession(): SleepEntry? = db.sleepDao().getMostRecent()
+
+    suspend fun getMostRecentSleepDurationMinutes(): Int? = db.sleepDao().getMostRecent()?.durationMinutes
+
+    suspend fun getSleepHistory(limit: Int = 100): List<SleepEntry> = db.sleepDao().getRecent(limit)
+
+    suspend fun deleteSleepEntry(id: Long) = db.sleepDao().deleteById(id)
+
+    /** Sums session durations per bedDate first, then averages across nights that have any sleep logged. */
     private fun avgMinutes(entries: List<SleepEntry>): Int {
-        val withSleep = entries.filter { it.totalMinutes > 0 }
+        val perNight = entries.groupBy { it.bedDate }.mapValues { (_, sessions) -> sessions.sumOf { it.durationMinutes } }
+        val withSleep = perNight.values.filter { it > 0 }
         if (withSleep.isEmpty()) return 0
-        return (withSleep.sumOf { it.totalMinutes } / withSleep.size)
+        return withSleep.sum() / withSleep.size
     }
 
     suspend fun getWeeklyAvgSleepMinutes(): Int =
@@ -398,13 +465,13 @@ class TrackerRepository(private val db: TrackerDatabase) {
 
     suspend fun getPreviousMonthSleepMinutes(): Int {
         val (from, to) = previousMonthRange()
-        return db.sleepDao().getBetween(from, to).sumOf { it.totalMinutes }
+        return db.sleepDao().getBetween(from, to).sumOf { it.durationMinutes }
     }
 
     /** Average monthly total over the trailing 12 months. */
     suspend fun getYearlyAverageSleepMinutes(): Int {
         val (from, to) = trailingYearRange()
-        val total = db.sleepDao().getBetween(from, to).sumOf { it.totalMinutes }
+        val total = db.sleepDao().getBetween(from, to).sumOf { it.durationMinutes }
         return (total / 12.0).toInt()
     }
 
@@ -534,6 +601,15 @@ class TrackerRepository(private val db: TrackerDatabase) {
         return db.preferenceDao().get(PREF_MOOD_ENABLED)?.value == "true"
     }
 
+    suspend fun getTimeFormat(): TimeFormat {
+        val raw = db.preferenceDao().get(PREF_TIME_FORMAT)?.value ?: return TimeFormat.AM_PM
+        return TimeFormat.entries.firstOrNull { it.name == raw } ?: TimeFormat.AM_PM
+    }
+
+    suspend fun setTimeFormat(format: TimeFormat) {
+        db.preferenceDao().set(PreferenceEntry(PREF_TIME_FORMAT, format.name))
+    }
+
     suspend fun setMoodFeatureEnabled(value: Boolean) {
         db.preferenceDao().set(PreferenceEntry(PREF_MOOD_ENABLED, value.toString()))
     }
@@ -545,6 +621,8 @@ class TrackerRepository(private val db: TrackerDatabase) {
     }
 
     suspend fun getMostRecentMoodEntry(): MoodEntry? = db.moodDao().getMostRecent()
+
+    suspend fun getMostRecentMoodEntryForDate(date: String): MoodEntry? = db.moodDao().getMostRecentForDate(date)
 
     suspend fun getMoodHistory(limit: Int = 100): List<MoodEntry> = db.moodDao().getRecent(limit)
 

@@ -198,7 +198,7 @@ fun LightLazyScrollView(
 }
 
 @Composable
-private fun LightScrollBar(
+fun LightScrollBar(
     scrollValue: Float,
     maxScrollValue: Float,
     onScrollTo: (Float) -> Unit,
