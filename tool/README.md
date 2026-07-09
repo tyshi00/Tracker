@@ -5,14 +5,14 @@ A tiny health tracker for the Light Phone III — just a simple way to keep tabs
 ## What it does
 
 - **Water** — log how much you're drinking today, in whatever unit you prefer
-- **Sleep** — log the exact date and time you fell asleep, and the date and time you woke up (e.g. sleep 07/07/26 11:30 PM, wake 07/08/26 7:00 AM) — it works out the hours for you
-- **Steps** — track your daily step count
-- **Cycle** *(optional)* — log period start/end dates, flow, mood, and energy, and see your next expected date on the home screen. Off by default — flip it on in Settings if it's useful to you
+- **Sleep** — log the exact date and time you fell asleep, and the date and time you woke up (e.g. sleep 07/07/26 11:30 PM, wake 07/08/26 7:00 AM) — it works out the hours for you. You can log bedtime and wake time separately too — save just the time you went to bed, then come back later (even the next morning) to add when you woke up
+- **Movement** — track however you actually move: Steps, Laps, Distance, or Time, independently of each other, each with its own weekly and monthly totals. Pick which one shows on the Home screen, and turn off any categories you don't use
+- **Cycle** *(optional)* — log period start/end dates, and log Flow, Energy, and Mood for each individual day of the cycle (since flow especially tends to vary day to day), plus see your next expected date on the home screen. Off by default — flip it on in Settings if it's useful to you
 - **Weight** *(optional)* — log a starting weight and keep logging your current weight over time; shows your average change per week as one neutral number (no separate "loss" or "gain" framing). Off by default, same as Cycle
-- **Mood** *(optional)* — log how you're feeling (pick up to 5 from a categorized list) plus a short note, backdateable like everything else. Off by default. If you've already logged something for a given day, reopening it shows what you logged instead of a blank form. If you also track Cycle, Cycle's own mood field automatically links here instead of asking you to log twice
+- **Mood** *(optional)* — log how you're feeling (pick up to 5 from a categorized list) plus a short note, backdateable like everything else. Off by default. The form clears after each save, so logging a second, different mood later the same day is just as easy as the first. If you also track Cycle, Cycle's own mood field automatically links here instead of asking you to log twice
 - **Forgot to log something?** Every entry screen lets you pick a date from a calendar, so you can backdate an entry instead of losing that day
 - **History** — Water, Steps, and Sleep each have a history view showing last month's total and a yearly average; Cycle, Weight, and Mood each have their own history of past entries, with the option to delete any entry you didn't mean to log
-- **Settings** — flip to a light theme if you'd rather not stare at black-on-white all day (or vice versa), choose AM/PM or 24-hour time (used for Sleep), set your default water unit, turn Cycle, Weight, or Mood tracking on/off, or reset your data
+- **Settings** — flip to a light theme if you'd rather not stare at black-on-white all day (or vice versa), turn any of Water, Movement (with its own Movement Type submenu for Steps/Laps/Distance/Time), Sleep, Cycle, Weight, or Mood tracking on or off, or reset your data. Under **Units & Formats**: your default water unit, default distance unit, default date format (mm/dd/yyyy, dd/mm/yyyy, or yyyy/mm/dd — used everywhere a date shows up), and default time format (AM/PM or 24-hour, used for Sleep)
 
 ## Using it
 
@@ -28,7 +28,7 @@ Install the APK on your Light Phone III.
 </tr>
 <tr>
 <td><img src="screenshots/water_history.png" width="200" alt="Water history screen"><br><sub>Water history</sub></td>
-<td><img src="screenshots/steps_screen.png" width="200" alt="Steps screen"><br><sub>Steps</sub></td>
+<td><img src="screenshots/mood_screen.png" width="200" alt="Mood screen"><br><sub>Mood</sub></td>
 <td><img src="screenshots/sleep_screen.png" width="200" alt="Sleep screen"><br><sub>Sleep</sub></td>
 </tr>
 <tr>

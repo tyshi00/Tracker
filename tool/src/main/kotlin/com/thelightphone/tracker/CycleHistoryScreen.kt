@@ -41,9 +41,11 @@ data class CycleHistoryItem(
     val id: Long,
     val startDate: String,
     val dateRangeDisplay: String,
-    val flowDisplay: String,
-    val moodDisplay: String,
-    val energyDisplay: String,
+    // True when nothing was ever logged directly on this cycle's days, but
+    // real Mood entries exist within its date range — points there instead
+    // of just showing every day as "Not set" for mood.
+    val showMoodTrackerHint: Boolean,
+    val dailyEntries: List<CycleDailyDisplay>,
 )
 
 data class CycleHistoryState(
@@ -63,30 +65,34 @@ class CycleHistoryViewModel(private val repo: TrackerRepository) : LightViewMode
         viewModelScope.launch(Dispatchers.IO) {
             val history = repo.getCycleHistory()
             val items = history.map { entry ->
-                val ownMoods = decodeMoods(entry.moods)
-                val moodDisplay = if (ownMoods.isNotEmpty()) {
-                    ownMoods.joinToString(", ") { it.label }
-                } else if (repo.hasMoodEntriesInRange(entry.startDate, entry.endDate)) {
-                    // Nothing stored directly on this cycle, but real Mood
-                    // entries exist within its date range — point there
-                    // instead of showing a misleading "Not set".
-                    "See Mood history"
-                } else {
-                    "Not set"
+                val dailyEntries = repo.getDailyCycleEntries(entry.id).map { daily ->
+                    CycleDailyDisplay(
+                        id = daily.id,
+                        dateDisplay = dateLabel(daily.date),
+                        flowLabel = daily.flow
+                            ?.let { name -> FlowLevel.entries.firstOrNull { it.name == name }?.label }
+                            ?: "Not set",
+                        energyLabel = daily.energy
+                            ?.let { name -> EnergyLevel.entries.firstOrNull { it.name == name }?.label }
+                            ?: "Not set",
+                        moodLabel = decodeMoods(daily.moods)
+                            .takeIf { it.isNotEmpty() }
+                            ?.joinToString(", ") { it.label }
+                            ?: "Not set",
+                    )
                 }
+
+                val anyDailyMoodLogged = dailyEntries.any { it.moodLabel != "Not set" }
+                val showMoodTrackerHint = !anyDailyMoodLogged &&
+                    repo.hasMoodEntriesInRange(entry.startDate, entry.endDate)
 
                 CycleHistoryItem(
                     id = entry.id,
                     startDate = entry.startDate,
                     dateRangeDisplay = dateLabel(entry.startDate) +
                         (entry.endDate?.let { " – ${dateLabel(it)}" } ?: " (ongoing)"),
-                    flowDisplay = entry.flow
-                        ?.let { name -> FlowLevel.entries.firstOrNull { it.name == name }?.label }
-                        ?: "Not set",
-                    moodDisplay = moodDisplay,
-                    energyDisplay = entry.energy
-                        ?.let { name -> EnergyLevel.entries.firstOrNull { it.name == name }?.label }
-                        ?: "Not set",
+                    showMoodTrackerHint = showMoodTrackerHint,
+                    dailyEntries = dailyEntries,
                 )
             }
             _state.value = CycleHistoryState(
@@ -199,21 +205,28 @@ private fun CycleHistoryRow(item: CycleHistoryItem, onClick: () -> Unit) {
             variant = LightTextVariant.Copy,
         )
         Spacer(modifier = Modifier.height(0.25f.gridUnitsAsDp()))
-        LightText(
-            text = "Flow: ${item.flowDisplay}",
-            variant = LightTextVariant.Fine,
-            lighten = true,
-        )
-        LightText(
-            text = "Mood: ${item.moodDisplay}",
-            variant = LightTextVariant.Fine,
-            lighten = true,
-        )
-        LightText(
-            text = "Energy: ${item.energyDisplay}",
-            variant = LightTextVariant.Fine,
-            lighten = true,
-        )
+        if (item.showMoodTrackerHint) {
+            LightText(
+                text = "Mood: See Mood history",
+                variant = LightTextVariant.Fine,
+                lighten = true,
+            )
+        }
+        if (item.dailyEntries.isEmpty()) {
+            LightText(
+                text = "No days logged",
+                variant = LightTextVariant.Fine,
+                lighten = true,
+            )
+        } else {
+            item.dailyEntries.forEach { day ->
+                LightText(
+                    text = "  ${day.dateDisplay}: ${day.flowLabel} flow, ${day.energyLabel} energy, ${day.moodLabel} mood",
+                    variant = LightTextVariant.Fine,
+                    lighten = true,
+                )
+            }
+        }
     }
 }
 

@@ -37,10 +37,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+private data class HomeTileSpec(
+    val label: String,
+    val value: String,
+    val unit: String? = null,
+    val onClick: () -> Unit,
+)
+
 data class HomeState(
+    val waterEnabled: Boolean = true,
     val waterDisplay: String = "0",
     val waterUnit: String = "ml",
-    val stepsDisplay: String = "0",
+    val movementEnabled: Boolean = true,
+    val movementDisplay: String = "",
+    val sleepEnabled: Boolean = true,
     val sleepDisplay: String = "0h 0m",
     val moodEnabled: Boolean = false,
     val moodDisplay: String = "",
@@ -66,8 +76,18 @@ class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
             if (invertColors) LightThemeController.setLightTheme()
             else LightThemeController.setDarkTheme()
 
+            // Primes DateFormatHolder for this session — Home is the natural
+            // entry point every time the app opens, so dateLabel() is
+            // correct before any Date field elsewhere gets rendered.
+            repo.getDateFormat()
+
+            val waterEnabled = repo.getWaterFeatureEnabled()
             val waterMl = repo.getTodayWaterMl()
-            val steps = repo.getTodaySteps()
+
+            val movementEnabled = repo.getMovementFeatureEnabled()
+            val movementDisplay = if (movementEnabled) repo.getPrimaryMovementDisplay() else ""
+
+            val sleepEnabled = repo.getSleepFeatureEnabled()
             val sleepMin = repo.getMostRecentSleepDurationMinutes() ?: 0
 
             val moodEnabled = repo.getMoodFeatureEnabled()
@@ -97,9 +117,12 @@ class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
             }
 
             _state.value = HomeState(
+                waterEnabled = waterEnabled,
                 waterDisplay = WaterConversion.format(waterMl, unit),
                 waterUnit = unit.label,
-                stepsDisplay = "%,d".format(steps),
+                movementEnabled = movementEnabled,
+                movementDisplay = movementDisplay,
+                sleepEnabled = sleepEnabled,
                 sleepDisplay = formatSleep(sleepMin),
                 moodEnabled = moodEnabled,
                 moodDisplay = moodDisplay,
@@ -150,56 +173,66 @@ class HomeScreen(sealedActivity: SealedLightActivity) :
                         .fillMaxWidth()
                         .padding(horizontal = 1f.gridUnitsAsDp()),
                 ) {
-                    TrackerHomeItem(
-                        label = "Water",
-                        value = state.waterDisplay,
-                        unit = state.waterUnit,
-                        onClick = { navigateTo(screenFactory = { WaterScreen(it, repo) }) },
-                    )
-
-                    Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
-
-                    TrackerHomeItem(
-                        label = "Steps",
-                        value = state.stepsDisplay,
-                        onClick = { navigateTo(screenFactory = { StepsScreen(it, repo) }) },
-                    )
-
-                    Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
-
-                    TrackerHomeItem(
-                        label = "Sleep",
-                        value = state.sleepDisplay,
-                        onClick = { navigateTo(screenFactory = { SleepScreen(it, repo) }) },
-                    )
-
-                    if (state.moodEnabled) {
-                        Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
-
-                        TrackerHomeItem(
-                            label = "Mood",
-                            value = state.moodDisplay,
-                            onClick = { navigateTo(screenFactory = { MoodScreen(it, repo) }) },
-                        )
+                    // Built as a list (rather than fixed inline blocks) since
+                    // Water/Steps/Sleep can now also be turned off — with six
+                    // independently-toggleable tiles, we can no longer assume
+                    // any particular one is "first", so spacing is computed
+                    // from whatever's actually visible instead of hardcoded
+                    // between fixed neighbors.
+                    val tiles = buildList {
+                        if (state.waterEnabled) {
+                            add(
+                                HomeTileSpec("Water", state.waterDisplay, state.waterUnit) {
+                                    navigateTo(screenFactory = { WaterScreen(it, repo) })
+                                },
+                            )
+                        }
+                        if (state.movementEnabled) {
+                            add(
+                                HomeTileSpec("Movement", state.movementDisplay) {
+                                    navigateTo(screenFactory = { MovementScreen(it, repo) })
+                                },
+                            )
+                        }
+                        if (state.sleepEnabled) {
+                            add(
+                                HomeTileSpec("Sleep", state.sleepDisplay) {
+                                    navigateTo(screenFactory = { SleepScreen(it, repo) })
+                                },
+                            )
+                        }
+                        if (state.moodEnabled) {
+                            add(
+                                HomeTileSpec("Mood", state.moodDisplay) {
+                                    navigateTo(screenFactory = { MoodScreen(it, repo) })
+                                },
+                            )
+                        }
+                        if (state.weightEnabled) {
+                            add(
+                                HomeTileSpec("Weight", state.weightDisplay) {
+                                    navigateTo(screenFactory = { WeightScreen(it, repo) })
+                                },
+                            )
+                        }
+                        if (state.cycleEnabled) {
+                            add(
+                                HomeTileSpec("Cycle", state.cycleNextDisplay) {
+                                    navigateTo(screenFactory = { CycleScreen(it, repo) })
+                                },
+                            )
+                        }
                     }
 
-                    if (state.weightEnabled) {
-                        Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
-
+                    tiles.forEachIndexed { index, tile ->
+                        if (index != 0) {
+                            Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
+                        }
                         TrackerHomeItem(
-                            label = "Weight",
-                            value = state.weightDisplay,
-                            onClick = { navigateTo(screenFactory = { WeightScreen(it, repo) }) },
-                        )
-                    }
-
-                    if (state.cycleEnabled) {
-                        Spacer(modifier = Modifier.height(2f.gridUnitsAsDp()))
-
-                        TrackerHomeItem(
-                            label = "Cycle",
-                            value = state.cycleNextDisplay,
-                            onClick = { navigateTo(screenFactory = { CycleScreen(it, repo) }) },
+                            label = tile.label,
+                            value = tile.value,
+                            unit = tile.unit,
+                            onClick = tile.onClick,
                         )
                     }
                 }

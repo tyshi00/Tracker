@@ -327,6 +327,11 @@ object LightIcons {
         darkModeResource = R.drawable.ic_rewind_white,
         lightModeResource = R.drawable.ic_rewind_black
     )
+    object SAVE : LightIconConfiguration(
+        name = "save",
+        darkModeResource = R.drawable.ic_save,
+        lightModeResource = R.drawable.ic_save
+    )
     object SAVE_TO_ALBUM : LightIconConfiguration(
         name = "save to album",
         darkModeResource = R.drawable.ic_save_to_album,

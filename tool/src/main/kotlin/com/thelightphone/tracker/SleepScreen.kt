@@ -42,6 +42,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 data class SleepState(
+    // Non-null once an in-progress entry (bedtime logged, wake not yet) is
+    // either loaded on open or started during this visit — completing that
+    // same entry rather than starting a new one. Mirrors Cycle's editingId.
+    val editingId: Long? = null,
+
     // Sleep and wake each get their own explicit date, rather than one
     // shared date with an inferred "next day" — clearer to read back, and
     // it also just works for same-day naps without any special-casing.
@@ -59,6 +64,11 @@ data class SleepState(
     val weeklyAvgDisplay: String = "0h 0m",
     val monthlyAvgDisplay: String = "0h 0m",
     val showSaved: Boolean = false,
+    // One-shot signal for the Composable to scroll down and reveal the
+    // Saved confirmation — only for a bedtime-only save, since the fields
+    // stay filled in (not cleared) in that case, so without this the person
+    // has no visual sign anything happened unless they scroll manually.
+    val justLoggedBedtimeOnly: Boolean = false,
 )
 
 class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
@@ -68,20 +78,40 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
     private val dbMutex = Mutex()
     private var savedToken = 0L
 
-    override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
-        reload()
-    }
+    // Only check for an in-progress entry to resume the FIRST time this
+    // screen is shown — later onScreenShow calls (returning from the
+    // date/hour/minute/AM-PM pickers) must not re-run this, or a stale DB
+    // read would clobber whatever's mid-edit. Same "load once" reasoning as
+    // Cycle/Weight.
+    private var loadedInitialState = false
 
-    private fun reload() {
+    override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
         viewModelScope.launch(Dispatchers.IO) {
             dbMutex.withLock {
+                val format = repo.getTimeFormat()
+                if (!loadedInitialState) {
+                    loadedInitialState = true
+                    loadIncompleteEntryIfAny(format)
+                }
                 _state.value = _state.value.copy(
-                    timeFormat = repo.getTimeFormat(),
+                    timeFormat = format,
                     weeklyAvgDisplay = formatSleep(repo.getWeeklyAvgSleepMinutes()),
                     monthlyAvgDisplay = formatSleep(repo.getMonthlyAvgSleepMinutes()),
                 )
             }
         }
+    }
+
+    private suspend fun loadIncompleteEntryIfAny(format: TimeFormat) {
+        val incomplete = repo.getIncompleteSleepEntry() ?: return
+        val (hour, minute, ampm) = decomposeClockMinutes(incomplete.bedTimeMinutes, format)
+        _state.value = _state.value.copy(
+            editingId = incomplete.id,
+            sleepDate = incomplete.bedDate,
+            sleepHour = hour,
+            sleepMinute = minute,
+            sleepAmPm = ampm,
+        )
     }
 
     fun setSleepDate(date: String) {
@@ -120,43 +150,93 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
         val s = _state.value
         val sleepHour = s.sleepHour.toIntOrNull()
         val sleepMinute = s.sleepMinute.toIntOrNull()
+        val sleepFilled = sleepHour != null && sleepMinute != null &&
+            (s.timeFormat == TimeFormat.HOUR_24 || s.sleepAmPm != null)
+
         val wakeHour = s.wakeHour.toIntOrNull()
         val wakeMinute = s.wakeMinute.toIntOrNull()
-        if (sleepHour == null || sleepMinute == null || wakeHour == null || wakeMinute == null) return
+        val wakeFilled = wakeHour != null && wakeMinute != null &&
+            (s.timeFormat == TimeFormat.HOUR_24 || s.wakeAmPm != null)
 
-        val sleepMinutesOfDay = if (s.timeFormat == TimeFormat.AM_PM) {
-            val ampm = s.sleepAmPm ?: return
-            to24HourMinutes(sleepHour, sleepMinute, ampm)
-        } else {
-            to24HourFormatMinutes(sleepHour, sleepMinute)
-        }
-        val wakeMinutesOfDay = if (s.timeFormat == TimeFormat.AM_PM) {
-            val ampm = s.wakeAmPm ?: return
-            to24HourMinutes(wakeHour, wakeMinute, ampm)
-        } else {
-            to24HourFormatMinutes(wakeHour, wakeMinute)
-        }
+        if (!sleepFilled && !wakeFilled) return
 
-        val duration = computeSleepDurationMinutes(s.sleepDate, sleepMinutesOfDay, s.wakeDate, wakeMinutesOfDay)
-        if (duration <= 0) return // wake wasn't actually after sleep — nothing sensible to save
+        val sleepMinutesOfDay = if (sleepFilled) {
+            if (s.timeFormat == TimeFormat.AM_PM) {
+                to24HourMinutes(sleepHour!!, sleepMinute!!, s.sleepAmPm!!)
+            } else {
+                to24HourFormatMinutes(sleepHour!!, sleepMinute!!)
+            }
+        } else {
+            null
+        }
+        val wakeMinutesOfDay = if (wakeFilled) {
+            if (s.timeFormat == TimeFormat.AM_PM) {
+                to24HourMinutes(wakeHour!!, wakeMinute!!, s.wakeAmPm!!)
+            } else {
+                to24HourFormatMinutes(wakeHour!!, wakeMinute!!)
+            }
+        } else {
+            null
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
             dbMutex.withLock {
-                repo.addSleepSession(s.sleepDate, sleepMinutesOfDay, s.wakeDate, wakeMinutesOfDay)
+                if (sleepFilled && wakeFilled) {
+                    val wakeDateResolved = if (wakeMinutesOfDay!! <= sleepMinutesOfDay!!) {
+                        LocalDate.parse(s.sleepDate, DateTimeFormatter.ISO_LOCAL_DATE)
+                            .plusDays(1)
+                            .format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    } else {
+                        s.sleepDate
+                    }
+                    val duration = computeSleepDurationMinutes(
+                        s.sleepDate, sleepMinutesOfDay, wakeDateResolved, wakeMinutesOfDay,
+                    )
+                    if (duration <= 0) return@withLock // wake wasn't actually after sleep
 
-                val nextSleepDate = previousDayStr()
-                _state.value = _state.value.copy(
-                    sleepDate = nextSleepDate,
-                    sleepHour = "",
-                    sleepMinute = "",
-                    sleepAmPm = null,
-                    wakeDate = todayStr(),
-                    wakeHour = "",
-                    wakeMinute = "",
-                    wakeAmPm = null,
-                    weeklyAvgDisplay = formatSleep(repo.getWeeklyAvgSleepMinutes()),
-                    monthlyAvgDisplay = formatSleep(repo.getMonthlyAvgSleepMinutes()),
-                )
+                    val editingId = s.editingId
+                    if (editingId != null) {
+                        repo.completeSleepEntry(editingId, s.sleepDate, sleepMinutesOfDay, wakeDateResolved, wakeMinutesOfDay)
+                    } else {
+                        repo.addSleepSession(s.sleepDate, sleepMinutesOfDay, wakeDateResolved, wakeMinutesOfDay)
+                    }
+
+                    // Complete — clear the whole form back to a fresh state.
+                    _state.value = _state.value.copy(
+                        editingId = null,
+                        sleepDate = previousDayStr(),
+                        sleepHour = "",
+                        sleepMinute = "",
+                        sleepAmPm = null,
+                        wakeDate = todayStr(),
+                        wakeHour = "",
+                        wakeMinute = "",
+                        wakeAmPm = null,
+                        weeklyAvgDisplay = formatSleep(repo.getWeeklyAvgSleepMinutes()),
+                        monthlyAvgDisplay = formatSleep(repo.getMonthlyAvgSleepMinutes()),
+                    )
+                } else if (sleepFilled) {
+                    // Bedtime only — start a new in-progress entry, or correct
+                    // one already in progress. Wake stays untouched either way.
+                    val editingId = s.editingId
+                    if (editingId != null) {
+                        repo.updateSleepEntryBedSide(editingId, s.sleepDate, sleepMinutesOfDay!!)
+                    } else {
+                        val newId = repo.startSleepEntry(s.sleepDate, sleepMinutesOfDay!!)
+                        _state.value = _state.value.copy(editingId = newId)
+                    }
+                    // Leave the Sleep fields as-is — they now reflect what's
+                    // saved. Signal the Composable to scroll down so the
+                    // Saved confirmation (and the fact wake time can be
+                    // added later) is actually visible without having to
+                    // scroll manually.
+                    _state.value = _state.value.copy(justLoggedBedtimeOnly = true)
+                } else {
+                    // Wake filled with no bedtime on record at all — nothing to
+                    // complete (this shouldn't normally happen, since an
+                    // in-progress entry's bedtime gets loaded automatically).
+                    return@withLock
+                }
 
                 val myToken = ++savedToken
                 _state.value = _state.value.copy(showSaved = true)
@@ -170,6 +250,11 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
         }
     }
 
+    /** Called once the Composable has handled the scroll — avoids re-triggering on later recompositions. */
+    fun consumeScrollSignal() {
+        _state.value = _state.value.copy(justLoggedBedtimeOnly = false)
+    }
+
     fun reset() {
         viewModelScope.launch(Dispatchers.IO) {
             dbMutex.withLock {
@@ -179,6 +264,7 @@ class SleepViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>
                     weeklyAvgDisplay = "0h 0m",
                     monthlyAvgDisplay = "0h 0m",
                 )
+                loadedInitialState = false
             }
         }
     }
@@ -199,6 +285,21 @@ class SleepScreen(
         val themeColors by LightThemeController.colors.collectAsState()
         val state by viewModel.state.collectAsState()
         val is24Hour = state.timeFormat == TimeFormat.HOUR_24
+        val scrollState = androidx.compose.foundation.rememberScrollState()
+
+        androidx.compose.runtime.LaunchedEffect(state.justLoggedBedtimeOnly) {
+            if (state.justLoggedBedtimeOnly) {
+                // "Saved" itself is a fixed element above the bottom bar,
+                // always visible regardless of scroll position — no scroll
+                // is needed to see it. What actually needs fixing here is
+                // showing what was just logged: scroll back to the top so
+                // the Sleep section (which now shows the saved bedtime) is
+                // immediately in view, rather than leaving the person
+                // wherever they happened to be scrolled to.
+                scrollState.animateScrollTo(0)
+                viewModel.consumeScrollSignal()
+            }
+        }
 
         LightTheme(colors = themeColors) {
             Column(
@@ -220,8 +321,17 @@ class SleepScreen(
                         .weight(1f)
                         .fillMaxWidth()
                         .padding(horizontal = 1f.gridUnitsAsDp()),
+                    scrollState = scrollState,
                 ) {
                     LightText(text = "Sleep", variant = LightTextVariant.Detail)
+                    if (state.editingId != null) {
+                        Spacer(modifier = Modifier.height(0.25f.gridUnitsAsDp()))
+                        LightText(
+                            text = "Bedtime already logged — add a wake time below to complete it.",
+                            variant = LightTextVariant.Fine,
+                            lighten = true,
+                        )
+                    }
                     Spacer(modifier = Modifier.height(0.5f.gridUnitsAsDp()))
 
                     LightTextField(
@@ -406,7 +516,7 @@ class SleepScreen(
                 LightBottomBar(
                     items = listOf(
                         LightBarButton.LightIcon(
-                            icon = LightIcons.SAVE_TO_ALBUM,
+                            icon = LightIcons.SAVE,
                             onClick = { viewModel.save() },
                             contentDescription = "Save",
                         ),

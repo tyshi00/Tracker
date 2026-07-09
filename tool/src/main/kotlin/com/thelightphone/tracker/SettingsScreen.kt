@@ -38,11 +38,14 @@ import kotlinx.coroutines.launch
 
 data class SettingsState(
     val invertColors: Boolean = false,
-    val defaultWaterUnit: WaterUnit = WaterUnit.ML,
+    val waterTrackingEnabled: Boolean = true,
+    val movementTrackingEnabled: Boolean = true,
+    val primaryMovementCategory: MovementCategory = MovementCategory.STEPS,
+    val visibleMovementCategories: List<MovementCategory> = MovementCategory.entries.toList(),
+    val sleepTrackingEnabled: Boolean = true,
     val cycleTrackingEnabled: Boolean = false,
     val weightTrackingEnabled: Boolean = false,
     val moodTrackingEnabled: Boolean = false,
-    val timeFormat: TimeFormat = TimeFormat.AM_PM,
 )
 
 class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
@@ -50,14 +53,24 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
     val state: StateFlow<SettingsState> = _state.asStateFlow()
 
     override fun onScreenShow(screen: SimpleLightScreen<Unit>) {
+        reload()
+    }
+
+    private fun reload() {
         viewModelScope.launch(Dispatchers.IO) {
             _state.value = SettingsState(
                 invertColors = repo.getInvertColors(),
-                defaultWaterUnit = repo.getWaterUnit(),
+                waterTrackingEnabled = repo.getWaterFeatureEnabled(),
+                movementTrackingEnabled = repo.getMovementFeatureEnabled(),
+                // Self-correcting: if Movement Type just hid whatever was
+                // primary, this falls back (and persists that fallback)
+                // rather than showing a now-invalid selection.
+                primaryMovementCategory = repo.getPrimaryMovementCategorySelfCorrected(),
+                visibleMovementCategories = repo.getVisibleMovementCategories(),
+                sleepTrackingEnabled = repo.getSleepFeatureEnabled(),
                 cycleTrackingEnabled = repo.getCycleFeatureEnabled(),
                 weightTrackingEnabled = repo.getWeightFeatureEnabled(),
                 moodTrackingEnabled = repo.getMoodFeatureEnabled(),
-                timeFormat = repo.getTimeFormat(),
             )
         }
     }
@@ -68,6 +81,37 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
             repo.setInvertColors(newValue)
             _state.value = _state.value.copy(invertColors = newValue)
             if (newValue) LightThemeController.setLightTheme() else LightThemeController.setDarkTheme()
+        }
+    }
+
+    fun toggleWaterTracking() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newValue = !_state.value.waterTrackingEnabled
+            repo.setWaterFeatureEnabled(newValue)
+            _state.value = _state.value.copy(waterTrackingEnabled = newValue)
+        }
+    }
+
+    fun toggleMovementTracking() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newValue = !_state.value.movementTrackingEnabled
+            repo.setMovementFeatureEnabled(newValue)
+            _state.value = _state.value.copy(movementTrackingEnabled = newValue)
+        }
+    }
+
+    fun setPrimaryMovementCategory(category: MovementCategory) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repo.setPrimaryMovementCategory(category)
+            _state.value = _state.value.copy(primaryMovementCategory = category)
+        }
+    }
+
+    fun toggleSleepTracking() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newValue = !_state.value.sleepTrackingEnabled
+            repo.setSleepFeatureEnabled(newValue)
+            _state.value = _state.value.copy(sleepTrackingEnabled = newValue)
         }
     }
 
@@ -92,20 +136,6 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
             val newValue = !_state.value.moodTrackingEnabled
             repo.setMoodFeatureEnabled(newValue)
             _state.value = _state.value.copy(moodTrackingEnabled = newValue)
-        }
-    }
-
-    fun setTimeFormat(format: TimeFormat) {
-        viewModelScope.launch(Dispatchers.IO) {
-            repo.setTimeFormat(format)
-            _state.value = _state.value.copy(timeFormat = format)
-        }
-    }
-
-    fun setWaterUnit(unit: WaterUnit) {
-        viewModelScope.launch(Dispatchers.IO) {
-            repo.setWaterUnit(unit)
-            _state.value = _state.value.copy(defaultWaterUnit = unit)
         }
     }
 
@@ -174,6 +204,152 @@ class SettingsScreen(
                         )
                     }
 
+                    // Track water/sleep — these default ON, unlike the
+                    // trackers below, since they're the app's original,
+                    // near-universal features. Controls whether their tiles
+                    // show up on the Home screen. (Steps lives inside the
+                    // Movement block below now, alongside Laps/Distance/Time.)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.toggleWaterTracking() }
+                            .padding(vertical = 0.75f.gridUnitsAsDp()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        LightText(
+                            text = "Track water",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier.weight(1f),
+                        )
+                        LightIcon(
+                            icon = if (state.waterTrackingEnabled) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
+                        )
+                    }
+
+                    // Track movement — replaces the old standalone "Track
+                    // steps" toggle. Turning this ON immediately opens the
+                    // primary-category picker, since Movement can't show a
+                    // sensible Home tile without one chosen. This is the one
+                    // toggle in Settings that navigates elsewhere on tap —
+                    // every other toggle here just flips in place.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                val turningOn = !state.movementTrackingEnabled
+                                viewModel.toggleMovementTracking()
+                                if (turningOn) {
+                                    navigateTo(
+                                        screenFactory = {
+                                            MovementCategoryPickerScreen(
+                                                it,
+                                                state.primaryMovementCategory,
+                                                state.visibleMovementCategories,
+                                            )
+                                        },
+                                        resultCallback = { result ->
+                                            if (result != null) viewModel.setPrimaryMovementCategory(result)
+                                        },
+                                    )
+                                }
+                            }
+                            .padding(vertical = 0.75f.gridUnitsAsDp()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        LightText(
+                            text = "Track movement",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier.weight(1f),
+                        )
+                        LightIcon(
+                            icon = if (state.movementTrackingEnabled) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
+                        )
+                    }
+
+                    if (state.movementTrackingEnabled) {
+                        // Displayed primary movement — which category's value
+                        // shows on the Home tile. Only ever offers categories
+                        // that are actually visible (see Movement Type).
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    navigateTo(
+                                        screenFactory = {
+                                            MovementCategoryPickerScreen(
+                                                it,
+                                                state.primaryMovementCategory,
+                                                state.visibleMovementCategories,
+                                            )
+                                        },
+                                        resultCallback = { result ->
+                                            if (result != null) viewModel.setPrimaryMovementCategory(result)
+                                        },
+                                    )
+                                }
+                                .padding(
+                                    start = 1.5f.gridUnitsAsDp(),
+                                    top = 0.75f.gridUnitsAsDp(),
+                                    bottom = 0.75f.gridUnitsAsDp(),
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                LightText(
+                                    text = "Displayed primary movement",
+                                    variant = LightTextVariant.Copy,
+                                )
+                                LightText(
+                                    text = state.primaryMovementCategory.label,
+                                    variant = LightTextVariant.Fine,
+                                    lighten = true,
+                                )
+                            }
+                            LightIcon(icon = LightIcons.ARROW_RIGHT)
+                        }
+
+                        // Movement Type — which of Steps/Laps/Distance/Time
+                        // are tracked at all, moved to its own screen so this
+                        // list doesn't get crowded with four separate toggles.
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    navigateTo(screenFactory = { MovementTypeScreen(it, repo) })
+                                }
+                                .padding(
+                                    start = 1.5f.gridUnitsAsDp(),
+                                    top = 0.75f.gridUnitsAsDp(),
+                                    bottom = 0.75f.gridUnitsAsDp(),
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            LightText(
+                                text = "Movement Type",
+                                variant = LightTextVariant.Copy,
+                                modifier = Modifier.weight(1f),
+                            )
+                            LightIcon(icon = LightIcons.ARROW_RIGHT)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.toggleSleepTracking() }
+                            .padding(vertical = 0.75f.gridUnitsAsDp()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        LightText(
+                            text = "Track sleep",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier.weight(1f),
+                        )
+                        LightIcon(
+                            icon = if (state.sleepTrackingEnabled) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
+                        )
+                    }
+
                     // Track mood — opt-in, hidden by default. Controls whether
                     // the Mood tile shows up on the Home screen.
                     Row(
@@ -233,65 +409,23 @@ class SettingsScreen(
                         )
                     }
 
-                    // Default water unit
+                    // Units & Formats — water/distance units, date/time
+                    // formats, all grouped in one place rather than crowding
+                    // this list with four separate rows.
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                navigateTo(
-                                    screenFactory = {
-                                        UnitPickerScreen(it, state.defaultWaterUnit)
-                                    },
-                                    resultCallback = { result ->
-                                        if (result != null) viewModel.setWaterUnit(result)
-                                    },
-                                )
+                                navigateTo(screenFactory = { UnitsAndFormatsScreen(it, repo) })
                             }
                             .padding(vertical = 0.75f.gridUnitsAsDp()),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            LightText(
-                                text = "Default water unit",
-                                variant = LightTextVariant.Copy,
-                            )
-                            LightText(
-                                text = state.defaultWaterUnit.label,
-                                variant = LightTextVariant.Fine,
-                                lighten = true,
-                            )
-                        }
-                        LightIcon(icon = LightIcons.ARROW_RIGHT)
-                    }
-
-                    // Time format — affects how Sleep's time fields are entered
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                navigateTo(
-                                    screenFactory = {
-                                        TimeFormatPickerScreen(it, state.timeFormat)
-                                    },
-                                    resultCallback = { result ->
-                                        if (result != null) viewModel.setTimeFormat(result)
-                                    },
-                                )
-                            }
-                            .padding(vertical = 0.75f.gridUnitsAsDp()),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            LightText(
-                                text = "Time format",
-                                variant = LightTextVariant.Copy,
-                            )
-                            LightText(
-                                text = state.timeFormat.label,
-                                variant = LightTextVariant.Fine,
-                                lighten = true,
-                            )
-                        }
+                        LightText(
+                            text = "Units & Formats",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier.weight(1f),
+                        )
                         LightIcon(icon = LightIcons.ARROW_RIGHT)
                     }
 

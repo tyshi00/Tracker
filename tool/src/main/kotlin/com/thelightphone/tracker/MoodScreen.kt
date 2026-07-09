@@ -222,7 +222,7 @@ class MoodScreen(
                 LightBottomBar(
                     items = listOf(
                         LightBarButton.LightIcon(
-                            icon = LightIcons.SAVE_TO_ALBUM,
+                            icon = LightIcons.SAVE,
                             onClick = { viewModel.save() },
                             contentDescription = "Save",
                         ),

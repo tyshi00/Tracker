@@ -14,6 +14,38 @@ enum class WaterUnit(val label: String) {
     BOTTLES("Bottles (500ml)"),
 }
 
+enum class DistanceUnit(val label: String) {
+    MILES("mi"),
+    KM("km"),
+}
+
+object DistanceConversion {
+    private const val METERS_PER_MILE = 1609.344
+
+    fun toMeters(amount: Double, unit: DistanceUnit): Double = when (unit) {
+        DistanceUnit.MILES -> amount * METERS_PER_MILE
+        DistanceUnit.KM -> amount * 1000.0
+    }
+
+    fun fromMeters(meters: Double, unit: DistanceUnit): Double = when (unit) {
+        DistanceUnit.MILES -> meters / METERS_PER_MILE
+        DistanceUnit.KM -> meters / 1000.0
+    }
+
+    fun format(meters: Double, unit: DistanceUnit): String {
+        val v = fromMeters(meters, unit)
+        return "%.2f".format(v).trimEnd('0').trimEnd('.').ifEmpty { "0" }
+    }
+}
+
+/** The four ways Movement can be logged — kept fully independent (no shared math, no conversions between them). */
+enum class MovementCategory(val label: String) {
+    STEPS("Steps"),
+    LAPS("Laps"),
+    DISTANCE("Distance"),
+    TIME("Time"),
+}
+
 enum class FlowLevel(val label: String) {
     LIGHT("Light"),
     MEDIUM("Medium"),
@@ -230,17 +262,31 @@ fun trailingYearRange(): Pair<String, String> {
 }
 
 /**
- * Human-friendly label for a YYYY-MM-DD date string, e.g. "Today",
- * "Yesterday", or "Wed, Jan 14" for anything older.
+ * Simple in-memory holder for the current date format, kept in sync with
+ * the stored preference — same reasoning as LightThemeController for theme:
+ * dateLabel() is called synchronously from dozens of places throughout the
+ * app, so it can't itself be a suspend function reading the database on
+ * every call. Refreshed whenever the format is read or changed.
+ */
+object DateFormatHolder {
+    @Volatile
+    var current: DateFormat = DateFormat.MDY
+}
+
+/**
+ * Formats a YYYY-MM-DD date string using the person's chosen date format —
+ * always a full numeric date (including year), never relative words like
+ * "Today"/"Yesterday" and never just a weekday/month/day without a year
+ * (which made same month-day dates from different years indistinguishable).
  */
 fun dateLabel(dateStr: String): String {
     val date = LocalDate.parse(dateStr, DateTimeFormatter.ISO_LOCAL_DATE)
-    val today = LocalDate.now()
-    return when (date) {
-        today -> "Today"
-        today.minusDays(1) -> "Yesterday"
-        else -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d"))
+    val pattern = when (DateFormatHolder.current) {
+        DateFormat.MDY -> "MM/dd/yyyy"
+        DateFormat.DMY -> "dd/MM/yyyy"
+        DateFormat.YMD -> "yyyy/MM/dd"
     }
+    return date.format(DateTimeFormatter.ofPattern(pattern))
 }
 
 /**
@@ -262,6 +308,12 @@ enum class AmPm(val label: String) {
 enum class TimeFormat(val label: String) {
     AM_PM("AM/PM"),
     HOUR_24("24-hour"),
+}
+
+enum class DateFormat(val label: String) {
+    MDY("mm/dd/yyyy"),
+    DMY("dd/mm/yyyy"),
+    YMD("yyyy/mm/dd"),
 }
 
 /** Converts a 12-hour clock reading to minutes since midnight (0-1439). */
@@ -302,6 +354,28 @@ fun computeSleepDurationMinutes(
     return ChronoUnit.MINUTES.between(sleepDateTime, wakeDateTime).toInt()
 }
 
+/**
+ * Splits minutes-since-midnight back into Hour/Minute/AmPm for pre-filling
+ * editable fields — e.g. when resuming an in-progress sleep entry. Always
+ * re-derived from the current time format rather than stored directly, so
+ * switching AM/PM vs 24-hour in Settings between logging bedtime and
+ * completing it later still displays correctly.
+ */
+fun decomposeClockMinutes(minutesSinceMidnight: Int, format: TimeFormat): Triple<String, String, AmPm?> {
+    val hour24 = minutesSinceMidnight / 60
+    val minute = minutesSinceMidnight % 60
+    return if (format == TimeFormat.HOUR_24) {
+        Triple(hour24.toString(), minute.toString(), null)
+    } else {
+        val ampm = if (hour24 < 12) AmPm.AM else AmPm.PM
+        val hour12 = when (hour24 % 12) {
+            0 -> 12
+            else -> hour24 % 12
+        }
+        Triple(hour12.toString(), minute.toString(), ampm)
+    }
+}
+
 class TrackerRepository(private val db: TrackerDatabase) {
 
     companion object {
@@ -312,6 +386,16 @@ class TrackerRepository(private val db: TrackerDatabase) {
         const val PREF_WEIGHT_ENABLED = "weight_feature_enabled"
         const val PREF_MOOD_ENABLED = "mood_feature_enabled"
         const val PREF_TIME_FORMAT = "time_format"
+        const val PREF_DATE_FORMAT = "date_format"
+        const val PREF_WATER_ENABLED = "water_feature_enabled"
+        const val PREF_STEPS_ENABLED = "steps_feature_enabled"
+        const val PREF_SLEEP_ENABLED = "sleep_feature_enabled"
+        const val PREF_MOVEMENT_ENABLED = "movement_feature_enabled"
+        const val PREF_LAPS_ENABLED = "laps_feature_enabled"
+        const val PREF_DISTANCE_ENABLED = "distance_feature_enabled"
+        const val PREF_TIME_ENABLED = "time_feature_enabled"
+        const val PREF_PRIMARY_MOVEMENT_CATEGORY = "primary_movement_category"
+        const val PREF_DISTANCE_UNIT = "distance_unit"
         private const val DB_NAME = "tracker.db"
 
         @Volatile private var INSTANCE: TrackerRepository? = null
@@ -414,13 +498,209 @@ class TrackerRepository(private val db: TrackerDatabase) {
 
     suspend fun resetSteps() = db.stepDao().resetAll()
 
+    // ── Laps ──────────────────────────────────────────────────────────────────
+    // Same pattern as Steps — a fully independent tally, no shared math with
+    // any other movement category.
+
+    suspend fun getTodayLaps(): Int =
+        db.lapDao().getForDate(todayStr())?.totalLaps ?: 0
+
+    suspend fun addLaps(laps: Int, date: String = todayStr()) {
+        val existing = db.lapDao().getForDate(date)?.totalLaps ?: 0
+        db.lapDao().upsert(LapEntry(date = date, totalLaps = existing + laps))
+    }
+
+    suspend fun getWeeklyLaps(): Int =
+        db.lapDao().getFrom(weekStartStr()).sumOf { it.totalLaps }
+
+    suspend fun getMonthlyLaps(): Int =
+        db.lapDao().getFrom(monthStartStr()).sumOf { it.totalLaps }
+
+    suspend fun getPreviousMonthLaps(): Int {
+        val (from, to) = previousMonthRange()
+        return db.lapDao().getBetween(from, to).sumOf { it.totalLaps }
+    }
+
+    suspend fun getYearlyAverageLaps(): Int {
+        val (from, to) = trailingYearRange()
+        val total = db.lapDao().getBetween(from, to).sumOf { it.totalLaps }
+        return (total / 12.0).toInt()
+    }
+
+    suspend fun resetLaps() = db.lapDao().resetAll()
+
+    // ── Distance ──────────────────────────────────────────────────────────────
+    // Stored in meters internally (same "canonical unit" approach as Water's
+    // ml), converted for display via DistanceConversion.
+
+    suspend fun getTodayDistanceMeters(): Double =
+        db.distanceDao().getForDate(todayStr())?.totalMeters ?: 0.0
+
+    suspend fun addDistance(meters: Double, date: String = todayStr()) {
+        val existing = db.distanceDao().getForDate(date)?.totalMeters ?: 0.0
+        db.distanceDao().upsert(DistanceEntry(date = date, totalMeters = existing + meters))
+    }
+
+    suspend fun getWeeklyDistanceMeters(): Double =
+        db.distanceDao().getFrom(weekStartStr()).sumOf { it.totalMeters }
+
+    suspend fun getMonthlyDistanceMeters(): Double =
+        db.distanceDao().getFrom(monthStartStr()).sumOf { it.totalMeters }
+
+    suspend fun getPreviousMonthDistanceMeters(): Double {
+        val (from, to) = previousMonthRange()
+        return db.distanceDao().getBetween(from, to).sumOf { it.totalMeters }
+    }
+
+    suspend fun getYearlyAverageDistanceMeters(): Double {
+        val (from, to) = trailingYearRange()
+        val total = db.distanceDao().getBetween(from, to).sumOf { it.totalMeters }
+        return total / 12.0
+    }
+
+    suspend fun resetDistance() = db.distanceDao().resetAll()
+
+    // ── Time ──────────────────────────────────────────────────────────────────
+    // For activities better described by duration than a count — a hike, a
+    // swim, yard work, dancing, anything without a step or lap to tally.
+
+    suspend fun getTodayTimeMinutes(): Int =
+        db.timeDao().getForDate(todayStr())?.totalMinutes ?: 0
+
+    suspend fun addTime(minutes: Int, date: String = todayStr()) {
+        val existing = db.timeDao().getForDate(date)?.totalMinutes ?: 0
+        db.timeDao().upsert(TimeEntry(date = date, totalMinutes = existing + minutes))
+    }
+
+    suspend fun getWeeklyTimeMinutes(): Int =
+        db.timeDao().getFrom(weekStartStr()).sumOf { it.totalMinutes }
+
+    suspend fun getMonthlyTimeMinutes(): Int =
+        db.timeDao().getFrom(monthStartStr()).sumOf { it.totalMinutes }
+
+    suspend fun getPreviousMonthTimeMinutes(): Int {
+        val (from, to) = previousMonthRange()
+        return db.timeDao().getBetween(from, to).sumOf { it.totalMinutes }
+    }
+
+    suspend fun getYearlyAverageTimeMinutes(): Int {
+        val (from, to) = trailingYearRange()
+        val total = db.timeDao().getBetween(from, to).sumOf { it.totalMinutes }
+        return (total / 12.0).toInt()
+    }
+
+    suspend fun resetTime() = db.timeDao().resetAll()
+
+    // ── Movement settings ────────────────────────────────────────────────────
+
+    /** Master toggle for the whole Movement feature — defaults on, same as Steps did before this replaced it. */
+    suspend fun getMovementFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_MOVEMENT_ENABLED)?.value != "false"
+    }
+
+    suspend fun setMovementFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_MOVEMENT_ENABLED, value.toString()))
+    }
+
+    // Sub-category visibility — all default visible, so Movement shows every
+    // way of logging activity out of the box; trim down from there.
+    suspend fun getLapsFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_LAPS_ENABLED)?.value != "false"
+    }
+
+    suspend fun setLapsFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_LAPS_ENABLED, value.toString()))
+    }
+
+    suspend fun getDistanceFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_DISTANCE_ENABLED)?.value != "false"
+    }
+
+    suspend fun setDistanceFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_DISTANCE_ENABLED, value.toString()))
+    }
+
+    suspend fun getTimeFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_TIME_ENABLED)?.value != "false"
+    }
+
+    suspend fun setTimeFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_TIME_ENABLED, value.toString()))
+    }
+
+    suspend fun getDistanceUnit(): DistanceUnit {
+        val raw = db.preferenceDao().get(PREF_DISTANCE_UNIT)?.value ?: return DistanceUnit.MILES
+        return DistanceUnit.entries.firstOrNull { it.name == raw } ?: DistanceUnit.MILES
+    }
+
+    suspend fun setDistanceUnit(unit: DistanceUnit) {
+        db.preferenceDao().set(PreferenceEntry(PREF_DISTANCE_UNIT, unit.name))
+    }
+
+    suspend fun getPrimaryMovementCategory(): MovementCategory {
+        val raw = db.preferenceDao().get(PREF_PRIMARY_MOVEMENT_CATEGORY)?.value ?: return MovementCategory.STEPS
+        return MovementCategory.entries.firstOrNull { it.name == raw } ?: MovementCategory.STEPS
+    }
+
+    suspend fun setPrimaryMovementCategory(category: MovementCategory) {
+        db.preferenceDao().set(PreferenceEntry(PREF_PRIMARY_MOVEMENT_CATEGORY, category.name))
+    }
+
+    /**
+     * Whichever categories are currently visible, in a fixed display order —
+     * used both to populate the primary-category picker (so it only ever
+     * offers something actually visible) and to silently fall back the
+     * primary category if its current pick gets hidden.
+     */
+    suspend fun getVisibleMovementCategories(): List<MovementCategory> {
+        val result = mutableListOf<MovementCategory>()
+        if (getStepsFeatureEnabled()) result.add(MovementCategory.STEPS)
+        if (getLapsFeatureEnabled()) result.add(MovementCategory.LAPS)
+        if (getDistanceFeatureEnabled()) result.add(MovementCategory.DISTANCE)
+        if (getTimeFeatureEnabled()) result.add(MovementCategory.TIME)
+        return result
+    }
+
+    /**
+     * The current primary category, falling back (and persisting that
+     * fallback) if it's no longer visible — e.g. its category was just
+     * hidden via Movement Type. Shared by the Home tile and Settings so
+     * both stay consistent without duplicating the correction logic.
+     */
+    suspend fun getPrimaryMovementCategorySelfCorrected(): MovementCategory {
+        val visible = getVisibleMovementCategories()
+        var primary = getPrimaryMovementCategory()
+        if (primary !in visible) {
+            primary = visible.firstOrNull() ?: primary
+            setPrimaryMovementCategory(primary)
+        }
+        return primary
+    }
+
+    /** Today's value for whichever category is currently primary, formatted for the Home tile. */
+    suspend fun getPrimaryMovementDisplay(): String {
+        val visible = getVisibleMovementCategories()
+        val primary = getPrimaryMovementCategorySelfCorrected()
+        if (visible.isEmpty()) return ""
+        return when (primary) {
+            MovementCategory.STEPS -> "%,d steps".format(getTodaySteps())
+            MovementCategory.LAPS -> "%,d laps".format(getTodayLaps())
+            MovementCategory.DISTANCE -> {
+                val unit = getDistanceUnit()
+                "${DistanceConversion.format(getTodayDistanceMeters(), unit)} ${unit.label}"
+            }
+            MovementCategory.TIME -> formatSleep(getTodayTimeMinutes())
+        }
+    }
+
     // ── Sleep ─────────────────────────────────────────────────────────────────
 
     /**
-     * Logs a sleep session from bedtime to wake time. [wakeDate] is inferred
-     * by the caller: if wake time-of-day is earlier than (or equal to) bed
-     * time-of-day, sleep crossed midnight and wake is the next calendar day;
-     * otherwise it's a same-day session (e.g. a nap).
+     * Logs a complete sleep session in one shot — both bedtime and wake time
+     * known already. [wakeDate] is inferred by the caller: if wake time-of-day
+     * is earlier than (or equal to) bed time-of-day, sleep crossed midnight
+     * and wake is the next calendar day; otherwise it's a same-day session
+     * (e.g. a nap).
      */
     suspend fun addSleepSession(
         bedDate: String,
@@ -441,17 +721,54 @@ class TrackerRepository(private val db: TrackerDatabase) {
         )
     }
 
-    suspend fun getMostRecentSleepSession(): SleepEntry? = db.sleepDao().getMostRecent()
+    /**
+     * Starts a sleep entry with just bedtime known — wake time gets filled
+     * in later, same shape as an ongoing Cycle with no end date yet. Returns
+     * the new entry's id so it can be completed afterward.
+     */
+    suspend fun startSleepEntry(bedDate: String, bedTimeMinutes: Int): Long {
+        return db.sleepDao().insert(SleepEntry(bedDate = bedDate, bedTimeMinutes = bedTimeMinutes))
+    }
 
-    suspend fun getMostRecentSleepDurationMinutes(): Int? = db.sleepDao().getMostRecent()?.durationMinutes
+    /** Corrects the bed side of an entry that's still waiting on a wake time — doesn't complete it. */
+    suspend fun updateSleepEntryBedSide(id: Long, bedDate: String, bedTimeMinutes: Int) {
+        db.sleepDao().update(SleepEntry(id = id, bedDate = bedDate, bedTimeMinutes = bedTimeMinutes))
+    }
+
+    /** Fills in the wake side of an entry [startSleepEntry] began earlier, computing its duration. */
+    suspend fun completeSleepEntry(id: Long, bedDate: String, bedTimeMinutes: Int, wakeDate: String, wakeTimeMinutes: Int) {
+        val duration = computeSleepDurationMinutes(bedDate, bedTimeMinutes, wakeDate, wakeTimeMinutes)
+            .coerceAtLeast(0)
+        db.sleepDao().update(
+            SleepEntry(
+                id = id,
+                bedDate = bedDate,
+                bedTimeMinutes = bedTimeMinutes,
+                wakeDate = wakeDate,
+                wakeTimeMinutes = wakeTimeMinutes,
+                durationMinutes = duration,
+            ),
+        )
+    }
+
+    /** The entry currently waiting on a wake time, if any — resume completing this one rather than starting fresh. */
+    suspend fun getIncompleteSleepEntry(): SleepEntry? = db.sleepDao().getMostRecentIncomplete()
+
+    suspend fun getMostRecentSleepDurationMinutes(): Int? = db.sleepDao().getMostRecentCompleted()?.durationMinutes
 
     suspend fun getSleepHistory(limit: Int = 100): List<SleepEntry> = db.sleepDao().getRecent(limit)
 
     suspend fun deleteSleepEntry(id: Long) = db.sleepDao().deleteById(id)
 
-    /** Sums session durations per bedDate first, then averages across nights that have any sleep logged. */
+    /**
+     * Sums session durations per bedDate first, then averages across nights
+     * that have any sleep logged. Only ever sees completed entries — the DAO
+     * queries already filter out anything still waiting on a wake time, so
+     * an unfinished entry can't skew an average with a missing duration.
+     */
     private fun avgMinutes(entries: List<SleepEntry>): Int {
-        val perNight = entries.groupBy { it.bedDate }.mapValues { (_, sessions) -> sessions.sumOf { it.durationMinutes } }
+        val perNight = entries.groupBy { it.bedDate }
+            .mapValues { (_, sessions) -> sessions.sumOf { it.durationMinutes ?: 0 } }
         val withSleep = perNight.values.filter { it > 0 }
         if (withSleep.isEmpty()) return 0
         return withSleep.sum() / withSleep.size
@@ -465,13 +782,13 @@ class TrackerRepository(private val db: TrackerDatabase) {
 
     suspend fun getPreviousMonthSleepMinutes(): Int {
         val (from, to) = previousMonthRange()
-        return db.sleepDao().getBetween(from, to).sumOf { it.durationMinutes }
+        return db.sleepDao().getBetween(from, to).sumOf { it.durationMinutes ?: 0 }
     }
 
     /** Average monthly total over the trailing 12 months. */
     suspend fun getYearlyAverageSleepMinutes(): Int {
         val (from, to) = trailingYearRange()
-        val total = db.sleepDao().getBetween(from, to).sumOf { it.durationMinutes }
+        val total = db.sleepDao().getBetween(from, to).sumOf { it.durationMinutes ?: 0 }
         return (total / 12.0).toInt()
     }
 
@@ -484,7 +801,10 @@ class TrackerRepository(private val db: TrackerDatabase) {
     /** Full cycle history, most recent first — used by the History screen. */
     suspend fun getCycleHistory(limit: Int = 100): List<CycleEntry> = db.cycleDao().getRecent(limit)
 
-    suspend fun deleteCycleEntry(id: Long) = db.cycleDao().deleteById(id)
+    suspend fun deleteCycleEntry(id: Long) {
+        db.cycleDao().deleteById(id)
+        db.cycleDailyDao().deleteForCycle(id) // its daily entries belong nowhere without it
+    }
 
     /**
      * Inserts a new cycle if [id] is null, otherwise updates the existing
@@ -495,17 +815,11 @@ class TrackerRepository(private val db: TrackerDatabase) {
         id: Long?,
         startDate: String,
         endDate: String?,
-        flow: FlowLevel?,
-        moods: List<Mood>,
-        energy: EnergyLevel?,
     ) {
         val entry = CycleEntry(
             id = id ?: 0,
             startDate = startDate,
             endDate = endDate,
-            flow = flow?.name,
-            moods = if (moods.isEmpty()) null else encodeMoods(moods),
-            energy = energy?.name,
         )
         if (id != null) {
             db.cycleDao().update(entry)
@@ -514,7 +828,10 @@ class TrackerRepository(private val db: TrackerDatabase) {
         }
     }
 
-    suspend fun resetCycles() = db.cycleDao().resetAll()
+    suspend fun resetCycles() {
+        db.cycleDao().resetAll()
+        db.cycleDailyDao().resetAll()
+    }
 
     /**
      * Predicts the next cycle start date by averaging the gap between the
@@ -532,6 +849,55 @@ class TrackerRepository(private val db: TrackerDatabase) {
         if (avgGap <= 0) return null
         return starts.first().plusDays(avgGap.toLong()).format(DateTimeFormatter.ISO_LOCAL_DATE)
     }
+
+    // ── Cycle daily entries (Flow / Energy per day) ─────────────────────────────
+    //
+    // Only meaningful while a cycle is ongoing (no end date set yet) — once a
+    // cycle is closed out, its days are done being logged, same as the rest
+    // of the cycle's details.
+
+    /**
+     * Logs Flow and/or Energy for a specific day within [cycleId]. Only the
+     * fields actually provided are changed — if a day already has, say, an
+     * Energy value and this call only supplies Flow, the existing Energy is
+     * preserved rather than wiped, since the person won't see what's already
+     * there before saving (same "always starts blank" pattern as the rest of
+     * the app, so nothing gets silently lost by leaving a field untouched).
+     */
+    suspend fun saveDailyCycleEntry(
+        cycleId: Long,
+        date: String,
+        flow: FlowLevel?,
+        energy: EnergyLevel?,
+        moods: List<Mood> = emptyList(),
+    ) {
+        if (flow == null && energy == null && moods.isEmpty()) return
+        val existing = db.cycleDailyDao().getForCycleAndDate(cycleId, date)
+        if (existing != null) {
+            db.cycleDailyDao().update(
+                existing.copy(
+                    flow = flow?.name ?: existing.flow,
+                    energy = energy?.name ?: existing.energy,
+                    moods = if (moods.isNotEmpty()) encodeMoods(moods) else existing.moods,
+                ),
+            )
+        } else {
+            db.cycleDailyDao().insert(
+                CycleDailyEntry(
+                    cycleId = cycleId,
+                    date = date,
+                    flow = flow?.name,
+                    energy = energy?.name,
+                    moods = if (moods.isNotEmpty()) encodeMoods(moods) else null,
+                ),
+            )
+        }
+    }
+
+    /** All days logged for a given cycle, oldest first — the running list shown on the Cycle screen and in History. */
+    suspend fun getDailyCycleEntries(cycleId: Long): List<CycleDailyEntry> = db.cycleDailyDao().getForCycle(cycleId)
+
+    suspend fun deleteDailyCycleEntry(id: Long) = db.cycleDailyDao().deleteById(id)
 
     // ── Weight ────────────────────────────────────────────────────────────────
 
@@ -601,6 +967,33 @@ class TrackerRepository(private val db: TrackerDatabase) {
         return db.preferenceDao().get(PREF_MOOD_ENABLED)?.value == "true"
     }
 
+    // Water/Steps/Sleep are the app's original, near-universal features, so
+    // unlike Cycle/Weight/Mood (opt-in, default off), these default to ON —
+    // absent a stored preference, treat it as enabled rather than disabled.
+    suspend fun getWaterFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_WATER_ENABLED)?.value != "false"
+    }
+
+    suspend fun setWaterFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_WATER_ENABLED, value.toString()))
+    }
+
+    suspend fun getStepsFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_STEPS_ENABLED)?.value != "false"
+    }
+
+    suspend fun setStepsFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_STEPS_ENABLED, value.toString()))
+    }
+
+    suspend fun getSleepFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_SLEEP_ENABLED)?.value != "false"
+    }
+
+    suspend fun setSleepFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_SLEEP_ENABLED, value.toString()))
+    }
+
     suspend fun getTimeFormat(): TimeFormat {
         val raw = db.preferenceDao().get(PREF_TIME_FORMAT)?.value ?: return TimeFormat.AM_PM
         return TimeFormat.entries.firstOrNull { it.name == raw } ?: TimeFormat.AM_PM
@@ -608,6 +1001,18 @@ class TrackerRepository(private val db: TrackerDatabase) {
 
     suspend fun setTimeFormat(format: TimeFormat) {
         db.preferenceDao().set(PreferenceEntry(PREF_TIME_FORMAT, format.name))
+    }
+
+    suspend fun getDateFormat(): DateFormat {
+        val raw = db.preferenceDao().get(PREF_DATE_FORMAT)?.value
+        val format = DateFormat.entries.firstOrNull { it.name == raw } ?: DateFormat.MDY
+        DateFormatHolder.current = format
+        return format
+    }
+
+    suspend fun setDateFormat(format: DateFormat) {
+        db.preferenceDao().set(PreferenceEntry(PREF_DATE_FORMAT, format.name))
+        DateFormatHolder.current = format
     }
 
     suspend fun setMoodFeatureEnabled(value: Boolean) {
@@ -666,8 +1071,12 @@ class TrackerRepository(private val db: TrackerDatabase) {
     suspend fun resetAll() {
         db.waterDao().resetAll()
         db.stepDao().resetAll()
+        db.lapDao().resetAll()
+        db.distanceDao().resetAll()
+        db.timeDao().resetAll()
         db.sleepDao().resetAll()
         db.cycleDao().resetAll()
+        db.cycleDailyDao().resetAll()
         db.weightDao().resetAll()
         db.startingWeightDao().reset()
         db.moodDao().resetAll()
