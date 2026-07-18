@@ -44,6 +44,7 @@ data class SettingsState(
     val visibleMovementCategories: List<MovementCategory> = MovementCategory.entries.toList(),
     val sleepTrackingEnabled: Boolean = true,
     val cycleTrackingEnabled: Boolean = false,
+    val notesTrackingEnabled: Boolean = false,
     val weightTrackingEnabled: Boolean = false,
     val moodTrackingEnabled: Boolean = false,
 )
@@ -69,6 +70,7 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
                 visibleMovementCategories = repo.getVisibleMovementCategories(),
                 sleepTrackingEnabled = repo.getSleepFeatureEnabled(),
                 cycleTrackingEnabled = repo.getCycleFeatureEnabled(),
+                notesTrackingEnabled = repo.getNotesFeatureEnabled(),
                 weightTrackingEnabled = repo.getWeightFeatureEnabled(),
                 moodTrackingEnabled = repo.getMoodFeatureEnabled(),
             )
@@ -120,6 +122,14 @@ class SettingsViewModel(private val repo: TrackerRepository) : LightViewModel<Un
             val newValue = !_state.value.cycleTrackingEnabled
             repo.setCycleFeatureEnabled(newValue)
             _state.value = _state.value.copy(cycleTrackingEnabled = newValue)
+        }
+    }
+
+    fun toggleNotesTracking() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newValue = !_state.value.notesTrackingEnabled
+            repo.setNotesFeatureEnabled(newValue)
+            _state.value = _state.value.copy(notesTrackingEnabled = newValue)
         }
     }
 
@@ -406,6 +416,26 @@ class SettingsScreen(
                         )
                         LightIcon(
                             icon = if (state.cycleTrackingEnabled) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
+                        )
+                    }
+
+                    // Track notes — opt-in, hidden by default. A standalone,
+                    // freeform place for anything that doesn't fit the app's
+                    // other structured metrics.
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { viewModel.toggleNotesTracking() }
+                            .padding(vertical = 0.75f.gridUnitsAsDp()),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        LightText(
+                            text = "Track notes",
+                            variant = LightTextVariant.Copy,
+                            modifier = Modifier.weight(1f),
+                        )
+                        LightIcon(
+                            icon = if (state.notesTrackingEnabled) LightIcons.TOGGLE_OFF else LightIcons.TOGGLE_ON,
                         )
                     }
 

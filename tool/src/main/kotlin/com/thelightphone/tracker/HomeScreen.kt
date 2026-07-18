@@ -58,6 +58,8 @@ data class HomeState(
     val weightDisplay: String = "",
     val cycleEnabled: Boolean = false,
     val cycleNextDisplay: String = "",
+    val notesEnabled: Boolean = false,
+    val notesDisplay: String = "",
 )
 
 class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>() {
@@ -116,6 +118,17 @@ class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
                 ""
             }
 
+            val notesEnabled = repo.getNotesFeatureEnabled()
+            val notesDisplay = if (notesEnabled) {
+                // Deliberately shows only when the last entry was made, not
+                // its content — Notes can hold anything, so the Home tile
+                // stays private-by-default even for someone glancing at the
+                // screen over your shoulder.
+                repo.getMostRecentNoteEntry()?.let { "Last entry: ${dateLabel(it.date)}" } ?: "Nothing logged yet"
+            } else {
+                ""
+            }
+
             _state.value = HomeState(
                 waterEnabled = waterEnabled,
                 waterDisplay = WaterConversion.format(waterMl, unit),
@@ -130,6 +143,8 @@ class HomeViewModel(private val repo: TrackerRepository) : LightViewModel<Unit>(
                 weightDisplay = weightDisplay,
                 cycleEnabled = cycleEnabled,
                 cycleNextDisplay = cycleNextDisplay,
+                notesEnabled = notesEnabled,
+                notesDisplay = notesDisplay,
             )
         }
     }
@@ -219,6 +234,13 @@ class HomeScreen(sealedActivity: SealedLightActivity) :
                             add(
                                 HomeTileSpec("Cycle", state.cycleNextDisplay) {
                                     navigateTo(screenFactory = { CycleScreen(it, repo) })
+                                },
+                            )
+                        }
+                        if (state.notesEnabled) {
+                            add(
+                                HomeTileSpec("Notes", state.notesDisplay) {
+                                    navigateTo(screenFactory = { NotesScreen(it, repo) })
                                 },
                             )
                         }

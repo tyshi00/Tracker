@@ -385,6 +385,7 @@ class TrackerRepository(private val db: TrackerDatabase) {
         const val PREF_WEIGHT_UNIT = "weight_unit"
         const val PREF_WEIGHT_ENABLED = "weight_feature_enabled"
         const val PREF_MOOD_ENABLED = "mood_feature_enabled"
+        const val PREF_NOTES_ENABLED = "notes_feature_enabled"
         const val PREF_TIME_FORMAT = "time_format"
         const val PREF_DATE_FORMAT = "date_format"
         const val PREF_WATER_ENABLED = "water_feature_enabled"
@@ -1033,6 +1034,33 @@ class TrackerRepository(private val db: TrackerDatabase) {
 
     suspend fun deleteMoodEntry(id: Long) = db.moodDao().deleteById(id)
 
+    // ── Notes ─────────────────────────────────────────────────────────────────
+    // A standalone, freeform place for anything that doesn't fit the app's
+    // other structured metrics. Opt-in and hidden by default, same as Cycle/
+    // Weight/Mood. Multiple entries per day are allowed, same reasoning as
+    // Mood — a person may want to log more than once in a day.
+
+    suspend fun getNotesFeatureEnabled(): Boolean {
+        return db.preferenceDao().get(PREF_NOTES_ENABLED)?.value == "true"
+    }
+
+    suspend fun setNotesFeatureEnabled(value: Boolean) {
+        db.preferenceDao().set(PreferenceEntry(PREF_NOTES_ENABLED, value.toString()))
+    }
+
+    suspend fun addNoteEntry(date: String, note: String) {
+        if (note.isBlank()) return
+        db.noteDao().insert(NoteEntry(date = date, note = note))
+    }
+
+    suspend fun getMostRecentNoteEntry(): NoteEntry? = db.noteDao().getMostRecent()
+
+    suspend fun getNoteHistory(limit: Int = 100): List<NoteEntry> = db.noteDao().getRecent(limit)
+
+    suspend fun deleteNoteEntry(id: Long) = db.noteDao().deleteById(id)
+
+    suspend fun resetNotes() = db.noteDao().resetAll()
+
     /**
      * Whether any Mood entries actually exist within a cycle's date range
      * (start through end, or through today if still ongoing) — used so
@@ -1080,5 +1108,6 @@ class TrackerRepository(private val db: TrackerDatabase) {
         db.weightDao().resetAll()
         db.startingWeightDao().reset()
         db.moodDao().resetAll()
+        db.noteDao().resetAll()
     }
 }

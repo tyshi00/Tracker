@@ -108,6 +108,14 @@ data class MoodEntry(
     val notes: String? = null,
 )
 
+/** Multiple entries per day are allowed, same reasoning as Mood — a person may want to log more than once in a day. */
+@Entity(tableName = "note_entries")
+data class NoteEntry(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val date: String, // YYYY-MM-DD
+    val note: String,
+)
+
 @Entity(tableName = "preferences")
 data class PreferenceEntry(
     @PrimaryKey val key: String,
@@ -354,15 +362,33 @@ interface MoodDao {
     suspend fun resetAll()
 }
 
+@Dao
+interface NoteDao {
+    @Insert
+    suspend fun insert(entry: NoteEntry): Long
+
+    @Query("SELECT * FROM note_entries ORDER BY date DESC, id DESC LIMIT 1")
+    suspend fun getMostRecent(): NoteEntry?
+
+    @Query("SELECT * FROM note_entries ORDER BY date DESC, id DESC LIMIT :limit")
+    suspend fun getRecent(limit: Int): List<NoteEntry>
+
+    @Query("DELETE FROM note_entries WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM note_entries")
+    suspend fun resetAll()
+}
+
 // ── Database ──────────────────────────────────────────────────────────────────
 
 @Database(
     entities = [
         WaterEntry::class, StepEntry::class, LapEntry::class, DistanceEntry::class, TimeEntry::class,
         SleepEntry::class, CycleEntry::class, CycleDailyEntry::class,
-        WeightEntry::class, StartingWeightEntry::class, MoodEntry::class, PreferenceEntry::class,
+        WeightEntry::class, StartingWeightEntry::class, MoodEntry::class, NoteEntry::class, PreferenceEntry::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class TrackerDatabase : RoomDatabase() {
@@ -377,5 +403,6 @@ abstract class TrackerDatabase : RoomDatabase() {
     abstract fun weightDao(): WeightDao
     abstract fun startingWeightDao(): StartingWeightDao
     abstract fun moodDao(): MoodDao
+    abstract fun noteDao(): NoteDao
     abstract fun preferenceDao(): PreferenceDao
 }

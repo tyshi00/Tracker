@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -118,10 +119,34 @@ fun LightTextInputEditor(
 
             val scrollState = rememberScrollState()
             val scrollBarScope = rememberCoroutineScope()
+            var viewportHeightPx by remember { mutableStateOf(0) }
+
+            // Keeps the cursor in view as text is typed or edited — without
+            // this, typing past the bottom of the visible area leaves the
+            // cursor invisible below the fold with no indication anything
+            // was typed.
+            LaunchedEffect(state.text.toString(), state.selection) {
+                val layout = textLayout ?: return@LaunchedEffect
+                if (viewportHeightPx <= 0) return@LaunchedEffect
+                val cursorPos = state.selection.min.coerceIn(0, layout.layoutInput.text.length)
+                val rect = layout.getCursorRect(cursorPos)
+                val viewTop = scrollState.value
+                val viewBottom = viewTop + viewportHeightPx
+                when {
+                    rect.bottom > viewBottom -> {
+                        scrollState.animateScrollTo((rect.bottom - viewportHeightPx).toInt().coerceAtLeast(0))
+                    }
+                    rect.top < viewTop -> {
+                        scrollState.animateScrollTo(rect.top.toInt().coerceAtLeast(0))
+                    }
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .onSizeChanged { viewportHeightPx = it.height },
             ) {
                 Box(
                     modifier = Modifier
@@ -137,15 +162,14 @@ fun LightTextInputEditor(
                                             TextRange(layout.getOffsetForPosition(down.position))
                                     }
                                 }
-                                drag(down.id) { change ->
-                                    textLayout?.let { layout ->
-                                        state.edit {
-                                            selection =
-                                                TextRange(layout.getOffsetForPosition(change.position))
-                                        }
-                                    }
-                                    change.consume()
-                                }
+                                // Deliberately not consuming further drag
+                                // movement here (and not tracking drag into
+                                // a text selection) — this Box also has
+                                // verticalScroll applied, and consuming the
+                                // drag for text selection left nothing for
+                                // scrolling to respond to. A tap still places
+                                // the cursor; a drag now scrolls instead of
+                                // extending a selection.
                             }
                         },
                     contentAlignment = Alignment.TopStart,
